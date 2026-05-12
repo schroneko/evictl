@@ -8,12 +8,15 @@ import {
   DEFAULT_TARGETS,
   type Route,
   appendMemoryEvent,
+  compileMemoryNotes,
   createFeedbackEvent,
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
   loadInventory,
   mergeConfigData,
   parseProcessPids,
+  promoteMemoryEvents,
+  readMemoryEvents,
   resolveTarget,
   setRouteConfig,
 } from "../src/cli.ts";
@@ -194,6 +197,7 @@ describe("memory events", () => {
       const lines = readFileSync(path, "utf8").trim().split("\n");
       expect(lines.length).toBe(1);
       expect(JSON.parse(lines[0]).target_evi).toBe("evi-a");
+      expect(readMemoryEvents(path)[0].text).toBe("Prefer explicit route ownership.");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -202,6 +206,36 @@ describe("memory events", () => {
   test("rejects feedback for unknown evi", () => {
     const inventory = loadInventory({});
     expect(() => createFeedbackEvent(inventory, "evi-missing", { verdict: "remember", text: "x" })).toThrow("unknown evi");
+  });
+
+  test("promotes feedback events into compiled notes", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-promote-test-"));
+    try {
+      const eventLog = join(root, "events.jsonl");
+      const compiledNotes = join(root, "memory");
+      appendMemoryEvent(eventLog, {
+        id: "event-1",
+        timestamp: "2026-05-13T00:00:00.000Z",
+        type: "feedback",
+        source: "user",
+        target_evi: "evi-a",
+        subject: "route",
+        verdict: "remember",
+        confidence: 1,
+        text: "Prefer explicit route ownership.",
+      });
+      const result = promoteMemoryEvents(eventLog, compiledNotes);
+      const note = readFileSync(result.notePath, "utf8");
+      expect(result.eventCount).toBe(1);
+      expect(note).toContain("## evi-a");
+      expect(note).toContain("Prefer explicit route ownership.");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("compiles empty memory notes", () => {
+    expect(compileMemoryNotes([])).toContain("No memory events promoted yet.");
   });
 });
 

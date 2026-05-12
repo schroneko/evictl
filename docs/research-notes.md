@@ -235,6 +235,11 @@ transcript copying. Each event stores a stable id, timestamp, source, target evi
 subject, verdict, confidence, and text. Later compilers can promote those events
 into notes, lessons, or policy files.
 
+`memory promote` and `sync` currently compile those JSONL feedback events into
+`feedback.md` under the configured compiled notes directory. This proves the
+event-to-notes path before adding runtime-native writers for Hermes, OpenClaw, or
+Claude Code Channels.
+
 ## Candidate command surface
 
 - `evictl ps`

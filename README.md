@@ -39,6 +39,8 @@ evictl stop
 evictl route list
 evictl route set
 evictl memory status
+evictl memory promote
+evictl sync
 evictl feedback
 evictl inspect
 ```
@@ -48,9 +50,7 @@ Planned next commands:
 ```bash
 evictl spawn
 evictl send
-evictl sync
 evictl memory search
-evictl memory promote
 ```
 
 ## Configuration
@@ -94,6 +94,17 @@ evictl feedback evi-ccc-telegram --verdict remember --text "Prefer explicit rout
 Feedback is appended as JSONL with the target evi, source, verdict, confidence,
 subject, and text. This is the first shared-memory sink; later sync commands can
 compile those events into runtime-native memory stores.
+
+Promote and sync memory:
+
+```bash
+evictl memory promote
+evictl sync
+```
+
+Both commands compile feedback events from the JSONL event log into
+`compiled_notes/feedback.md`. Runtime-native memory writers are still planned,
+but the event-to-notes pipeline is available now.
 
 Example:
 

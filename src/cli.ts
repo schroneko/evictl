@@ -802,6 +802,73 @@ export function appendMemoryEvent(eventLog: string, event: MemoryEvent): string 
   return path;
 }
 
+function parseMemoryEvent(value: unknown): MemoryEvent | undefined {
+  const raw = objectValue(value);
+  const id = stringValue(raw.id);
+  const timestamp = stringValue(raw.timestamp);
+  const type = stringValue(raw.type);
+  const targetEvi = stringValue(raw.target_evi ?? raw.targetEvi);
+  const text = stringValue(raw.text);
+  if (!id || !timestamp || !type || !targetEvi || !text) return undefined;
+  return {
+    id,
+    timestamp,
+    type,
+    source: stringValue(raw.source, "unknown"),
+    target_evi: targetEvi,
+    subject: stringValue(raw.subject),
+    verdict: stringValue(raw.verdict),
+    confidence: typeof raw.confidence === "number" ? raw.confidence : Number(raw.confidence ?? 0),
+    text,
+  };
+}
+
+export function readMemoryEvents(eventLog: string): MemoryEvent[] {
+  const path = concretePath(eventLog);
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const parsed = parseMemoryEvent(JSON.parse(line));
+      return parsed ? [parsed] : [];
+    });
+}
+
+function compactText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+export function compileMemoryNotes(events: MemoryEvent[], limit = 100): string {
+  const selected = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-limit);
+  const lines = ["# evictl Shared Memory", "", `Promoted events: ${selected.length}`, ""];
+  if (selected.length === 0) {
+    lines.push("No memory events promoted yet.", "");
+    return lines.join("\n");
+  }
+  const byEvi = new Map<string, MemoryEvent[]>();
+  for (const event of selected) byEvi.set(event.target_evi, [...(byEvi.get(event.target_evi) ?? []), event]);
+  for (const [targetEvi, targetEvents] of [...byEvi].sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(`## ${targetEvi}`, "");
+    for (const event of targetEvents) {
+      const subject = event.subject ? ` subject=${event.subject}` : "";
+      lines.push(`- ${event.timestamp} ${event.verdict || event.type} confidence=${event.confidence}${subject}: ${compactText(event.text)}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+export function promoteMemoryEvents(eventLog: string, compiledNotes: string, limit = 100): { eventCount: number; notePath: string } {
+  const events = readMemoryEvents(eventLog);
+  const notesDir = concretePath(compiledNotes);
+  mkdirSync(notesDir, { recursive: true });
+  const notePath = join(notesDir, "feedback.md");
+  writeFileSync(notePath, compileMemoryNotes(events, limit));
+  return { eventCount: Math.min(events.length, limit), notePath };
+}
+
 function printDiscovery(discovery: Discovery): void {
   const targets = Object.keys(discovery.targets).sort();
   console.log(`targets=${targets.length ? targets.join(",") : "-"}`);
@@ -912,6 +979,22 @@ function cmdMemoryStatus(): number {
   const inventory = loadInventory();
   console.log(`event_log=${expandPath(inventory.memoryEventLog) ?? inventory.memoryEventLog}`);
   console.log(`compiled_notes=${expandPath(inventory.memoryCompiledNotes) ?? inventory.memoryCompiledNotes}`);
+  return 0;
+}
+
+function cmdMemoryPromote(args: string[]): number {
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const result = promoteMemoryEvents(inventory.memoryEventLog, inventory.memoryCompiledNotes, numberOption(args, "--limit", 100));
+  console.log(`promoted=${result.eventCount} notes=${result.notePath}`);
+  return 0;
+}
+
+function cmdSync(args: string[]): number {
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const result = promoteMemoryEvents(inventory.memoryEventLog, inventory.memoryCompiledNotes, numberOption(args, "--limit", 100));
+  console.log(`sync=memory promoted=${result.eventCount} notes=${result.notePath}`);
   return 0;
 }
 
@@ -1047,6 +1130,8 @@ Commands:
   route list
   route set <key> --target <evi> [--channel <channel>] [--account <id>] [--peer <id>] [--mode <mode>] [--force]
   memory status
+  memory promote [--limit <n>]
+  sync [--limit <n>]
   feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);
@@ -1065,6 +1150,7 @@ export function main(argv = process.argv.slice(2)): number {
     "stop-all": () => cmdStopAll(),
     use: cmdUse,
     doctor: () => cmdDoctor(),
+    sync: cmdSync,
     inspect: cmdInspect,
     feedback: cmdFeedback,
   };
@@ -1075,6 +1161,7 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "route" && args[0] === "list") return cmdRouteList();
   if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();
+  if (command === "memory" && args[0] === "promote") return cmdMemoryPromote(args.slice(1));
   const handler = commands[command];
   if (!handler) throw new Error(`unknown command: ${command}`);
   return handler(args);
