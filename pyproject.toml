@@ -1,0 +1,17 @@
+[project]
+name = "evictl"
+version = "0.1.0"
+description = "Orchestrate local evi agent runtimes and shared memory"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "evictl contributors" }
+]
+
+[project.scripts]
+evictl = "evictl.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
