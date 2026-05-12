@@ -13,6 +13,7 @@ import {
   mergeConfigData,
   parseProcessPids,
   resolveTarget,
+  setRouteConfig,
 } from "../src/cli.ts";
 
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -97,6 +98,54 @@ describe("routes", () => {
     };
     const conflicts = duplicatePrimaryRoutes(routes);
     expect([...conflicts.keys()]).toEqual(["telegram\u0000main\u00001"]);
+  });
+
+  test("sets a route in config data", () => {
+    const next = setRouteConfig(
+      {
+        evis: {
+          "evi-a": {
+            runtime: "ccc",
+          },
+        },
+      },
+      {
+        key: "telegram:main",
+        channel: "telegram",
+        accountId: "main",
+        peerId: "",
+        targetEvi: "evi-a",
+        mode: "primary",
+      },
+    );
+    expect((next.routes as Record<string, Record<string, string>>)["telegram:main"].target_evi).toBe("evi-a");
+  });
+
+  test("rejects duplicate primary routes unless forced", () => {
+    const data = {
+      evis: {
+        "evi-a": { runtime: "ccc" },
+        "evi-b": { runtime: "hermes" },
+      },
+      routes: {
+        "telegram:a": {
+          channel: "telegram",
+          account_id: "main",
+          target_evi: "evi-a",
+          mode: "primary",
+        },
+      },
+    };
+    const route = {
+      key: "telegram:b",
+      channel: "telegram",
+      accountId: "main",
+      peerId: "",
+      targetEvi: "evi-b",
+      mode: "primary",
+    };
+    expect(() => setRouteConfig(data, route)).toThrow("duplicate primary route");
+    expect(setRouteConfig(data, route, true).routes).toBeTruthy();
   });
 });
 

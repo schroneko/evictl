@@ -174,9 +174,8 @@ function stringMap(value: unknown): Record<string, string> {
   return Object.fromEntries(entries);
 }
 
-export function loadTargets(): Record<string, Target> {
+export function loadTargets(data = loadConfigData()): Record<string, Target> {
   const targets = structuredClone(DEFAULT_TARGETS);
-  const data = loadConfigData();
   const configuredTargets = objectValue(data.targets);
   for (const [name, rawTarget] of Object.entries(configuredTargets)) {
     const raw = objectValue(rawTarget);
@@ -198,9 +197,8 @@ export function loadTargets(): Record<string, Target> {
   return targets;
 }
 
-export function loadInventory(): Inventory {
-  const data = loadConfigData();
-  const targets = loadTargets();
+export function loadInventory(data = loadConfigData()): Inventory {
+  const targets = loadTargets(data);
   const evis: Record<string, Evi> = {};
   for (const name of Object.keys(targets).sort()) {
     evis[`evi-${name}`] = {
@@ -536,6 +534,30 @@ function routeToConfig(route: Route): Record<string, unknown> {
   };
 }
 
+export function setRouteConfig(data: Record<string, unknown>, route: Route, force = false): Record<string, unknown> {
+  const inventory = loadInventory(data);
+  if (!inventory.evis[route.targetEvi]) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown target evi: ${route.targetEvi} (known: ${known})`);
+  }
+  const routes = {
+    ...inventory.routes,
+    [route.key]: route,
+  };
+  const conflicts = duplicatePrimaryRoutes(routes);
+  if (!force && conflicts.size > 0) {
+    for (const [owner, conflictRoutes] of conflicts) {
+      if (conflictRoutes.some((item) => item.key === route.key)) {
+        throw new Error(`duplicate primary route ${ownerLabel(owner)}: ${conflictRoutes.map((item) => item.key).join(", ")}`);
+      }
+    }
+  }
+  return {
+    ...data,
+    routes: Object.fromEntries(Object.entries(routes).map(([key, value]) => [key, routeToConfig(value)])),
+  };
+}
+
 export function mergeConfigData(existing: Record<string, unknown>, discovery: Discovery): Record<string, unknown> {
   const targets = { ...objectValue(existing.targets) };
   for (const [name, target] of Object.entries(discovery.targets)) targets[name] = targetToConfig(target);
@@ -800,6 +822,32 @@ function cmdRouteList(): number {
   return 0;
 }
 
+function cmdRouteSet(args: string[]): number {
+  const key = required(args[0], "route set requires a route key");
+  const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const channel = optionValue(args, "--channel") ?? key.split(":", 1)[0] ?? "";
+  const targetEvi = optionValue(args, "--target") ?? optionValue(args, "--target-evi") ?? "";
+  const mode = optionValue(args, "--mode") ?? "primary";
+  if (!channel) throw new Error("route set requires --channel or a key starting with the channel");
+  if (!targetEvi) throw new Error("route set requires --target <evi>");
+  if (!["primary", "standby", "mirror", "shadow", "review", "rescue"].includes(mode)) {
+    throw new Error(`unsupported route mode: ${mode}`);
+  }
+  const route: Route = {
+    key,
+    channel,
+    targetEvi,
+    accountId: optionValue(args, "--account") ?? optionValue(args, "--account-id") ?? "",
+    peerId: optionValue(args, "--peer") ?? optionValue(args, "--peer-id") ?? "",
+    mode,
+  };
+  const next = setRouteConfig(data, route, hasFlag(args, "--force"));
+  writeConfigData(path, next);
+  console.log(`route=${route.key} channel=${route.channel} account=${route.accountId || "-"} peer=${route.peerId || "-"} target=${route.targetEvi} mode=${route.mode}`);
+  return 0;
+}
+
 function cmdMemoryStatus(): number {
   const inventory = loadInventory();
   console.log(`event_log=${expandPath(inventory.memoryEventLog) ?? inventory.memoryEventLog}`);
@@ -921,6 +969,7 @@ Commands:
   use <target>
   doctor
   route list
+  route set <key> --target <evi> [--channel <channel>] [--account <id>] [--peer <id>] [--mode <mode>] [--force]
   memory status
   inspect <evi>
 `);
@@ -946,6 +995,7 @@ export function main(argv = process.argv.slice(2)): number {
     return command ? 0 : 1;
   }
   if (command === "route" && args[0] === "list") return cmdRouteList();
+  if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();
   const handler = commands[command];
   if (!handler) throw new Error(`unknown command: ${command}`);

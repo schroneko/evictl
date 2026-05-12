@@ -37,6 +37,7 @@ evictl status
 evictl doctor
 evictl stop
 evictl route list
+evictl route set
 evictl memory status
 evictl inspect
 ```
@@ -45,7 +46,6 @@ Planned next commands:
 
 ```bash
 evictl spawn
-evictl route set
 evictl send
 evictl sync
 evictl memory search
@@ -70,10 +70,20 @@ evictl import --dry-run
 evictl import
 ```
 
+Manage routes:
+
+```bash
+evictl route list
+evictl route set telegram:main --target evi-ccc-telegram --account default --mode primary
+```
+
 The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
 OpenClaw. Running runtimes are imported as `primary` routes; stopped runtimes are
 imported as `standby` routes so duplicate Telegram ownership stays visible and
 explicit.
+
+`route set` refuses duplicate `primary` ownership for the same
+channel/account/peer unless `--force` is passed.
 
 Example:
 
