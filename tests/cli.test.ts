@@ -11,6 +11,7 @@ import {
   duplicatePrimaryRoutes,
   loadInventory,
   mergeConfigData,
+  parseProcessPids,
   resolveTarget,
 } from "../src/cli.ts";
 
@@ -52,9 +53,14 @@ describe("defaults", () => {
 
 describe("inventory", () => {
   test("default evi inventory matches targets", () => {
-    delete process.env.XDG_CONFIG_HOME;
-    const inventory = loadInventory();
-    expect(new Set(Object.keys(inventory.evis))).toEqual(new Set(["evi-openclaw", "evi-hermes", "evi-ccc"]));
+    const root = mkdtempSync(join(tmpdir(), "evictl-test-empty-"));
+    try {
+      process.env.XDG_CONFIG_HOME = root;
+      const inventory = loadInventory();
+      expect(new Set(Object.keys(inventory.evis))).toEqual(new Set(["evi-openclaw", "evi-hermes", "evi-ccc"]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("loads configured routes", () => {
@@ -91,6 +97,21 @@ describe("routes", () => {
     };
     const conflicts = duplicatePrimaryRoutes(routes);
     expect([...conflicts.keys()]).toEqual(["telegram\u0000main\u00001"]);
+  });
+});
+
+describe("process parsing", () => {
+  test("ignores pgrep self matches", () => {
+    const pids = parseProcessPids(
+      [
+        "10 pgrep -af openclaw|ai.openclaw.gateway",
+        "20 /opt/homebrew/bin/bun ./dist/evictl doctor",
+        "30 claude --channels plugin:telegram@claude-plugins-official --name nukoevi-telegram",
+      ].join("\n"),
+      ["openclaw", "nukoevi-telegram"],
+      20,
+    );
+    expect(pids).toEqual([30]);
   });
 });
 

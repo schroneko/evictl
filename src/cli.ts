@@ -580,13 +580,26 @@ function launchdState(label?: string): string | undefined {
 
 function pidsFor(patterns: string[]): number[] {
   if (patterns.length === 0) return [];
-  const result = run(["pgrep", "-af", patterns.join("|")]);
+  const result = run(["ps", "-axo", "pid=,command="]);
   if (result.code !== 0) return [];
-  const pids = result.stdout
+  return parseProcessPids(result.stdout, patterns, process.pid);
+}
+
+export function parseProcessPids(stdout: string, patterns: string[], currentPid = -1): number[] {
+  const regex = new RegExp(patterns.join("|"));
+  const pids = stdout
     .split("\n")
-    .map((line) => line.trim().split(/\s+/, 1)[0])
-    .filter((value) => /^\d+$/.test(value))
-    .map(Number);
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [pid, ...commandParts] = line.split(/\s+/);
+      const command = commandParts.join(" ");
+      if (!/^\d+$/.test(pid)) return [];
+      if (Number(pid) === currentPid) return [];
+      if (/\bpgrep\b/.test(command) && command.includes("-af")) return [];
+      if (!regex.test(command)) return [];
+      return [Number(pid)];
+    });
   return [...new Set(pids)].sort((a, b) => a - b);
 }
 
