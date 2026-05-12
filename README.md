@@ -12,6 +12,21 @@ The initial runtime adapters are:
 
 Research notes: [docs/research-notes.md](docs/research-notes.md)
 
+## Development
+
+```bash
+bun install
+bun test
+bun run check
+bun run build
+```
+
+Run the CLI directly during development:
+
+```bash
+bun run src/cli.ts ps
+```
+
 ## Commands
 
 ```bash
