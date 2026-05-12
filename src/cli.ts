@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -49,6 +50,18 @@ export type Inventory = {
   routes: Record<string, Route>;
   memoryEventLog: string;
   memoryCompiledNotes: string;
+};
+
+export type MemoryEvent = {
+  id: string;
+  timestamp: string;
+  type: string;
+  source: string;
+  target_evi: string;
+  subject: string;
+  verdict: string;
+  confidence: number;
+  text: string;
 };
 
 export type DiscoverySource = {
@@ -732,6 +745,10 @@ function displayPath(value: string): string {
   return expandPath(value) || value || "-";
 }
 
+function concretePath(value: string): string {
+  return expandPath(value) ?? value;
+}
+
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
 }
@@ -740,6 +757,49 @@ function optionValue(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   if (index < 0) return undefined;
   return args[index + 1];
+}
+
+function numberOption(args: string[], name: string, fallback: number): number {
+  const raw = optionValue(args, name);
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) throw new Error(`invalid number for ${name}: ${raw}`);
+  return value;
+}
+
+export function createFeedbackEvent(
+  inventory: Inventory,
+  targetEvi: string,
+  values: { verdict: string; text: string; subject?: string; source?: string; confidence?: number },
+  id: string = randomUUID(),
+  timestamp: string = new Date().toISOString(),
+): MemoryEvent {
+  if (!inventory.evis[targetEvi]) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown evi: ${targetEvi} (known: ${known})`);
+  }
+  if (!["accept", "reject", "correct", "improve", "remember"].includes(values.verdict)) {
+    throw new Error(`unsupported feedback verdict: ${values.verdict}`);
+  }
+  if (!values.text) throw new Error("feedback requires --text <text>");
+  return {
+    id,
+    timestamp,
+    type: "feedback",
+    source: values.source ?? "user",
+    target_evi: targetEvi,
+    subject: values.subject ?? "",
+    verdict: values.verdict,
+    confidence: values.confidence ?? 1,
+    text: values.text,
+  };
+}
+
+export function appendMemoryEvent(eventLog: string, event: MemoryEvent): string {
+  const path = concretePath(eventLog);
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(event)}\n`);
+  return path;
 }
 
 function printDiscovery(discovery: Discovery): void {
@@ -852,6 +912,22 @@ function cmdMemoryStatus(): number {
   const inventory = loadInventory();
   console.log(`event_log=${expandPath(inventory.memoryEventLog) ?? inventory.memoryEventLog}`);
   console.log(`compiled_notes=${expandPath(inventory.memoryCompiledNotes) ?? inventory.memoryCompiledNotes}`);
+  return 0;
+}
+
+function cmdFeedback(args: string[]): number {
+  const targetEvi = required(args[0], "feedback requires a target evi");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const event = createFeedbackEvent(inventory, targetEvi, {
+    verdict: optionValue(args, "--verdict") ?? "remember",
+    text: optionValue(args, "--text") ?? "",
+    subject: optionValue(args, "--subject"),
+    source: optionValue(args, "--source"),
+    confidence: numberOption(args, "--confidence", 1),
+  });
+  const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
+  console.log(`event=${event.id} type=${event.type} target=${event.target_evi} verdict=${event.verdict} log=${eventLog}`);
   return 0;
 }
 
@@ -971,6 +1047,7 @@ Commands:
   route list
   route set <key> --target <evi> [--channel <channel>] [--account <id>] [--peer <id>] [--mode <mode>] [--force]
   memory status
+  feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);
 }
@@ -989,6 +1066,7 @@ export function main(argv = process.argv.slice(2)): number {
     use: cmdUse,
     doctor: () => cmdDoctor(),
     inspect: cmdInspect,
+    feedback: cmdFeedback,
   };
   if (!command || command === "--help" || command === "-h") {
     printHelp();

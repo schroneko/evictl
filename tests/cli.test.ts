@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,8 @@ import {
   ALIASES,
   DEFAULT_TARGETS,
   type Route,
+  appendMemoryEvent,
+  createFeedbackEvent,
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
   loadInventory,
@@ -161,6 +163,45 @@ describe("process parsing", () => {
       20,
     );
     expect(pids).toEqual([30]);
+  });
+});
+
+describe("memory events", () => {
+  test("creates and appends feedback events", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-memory-test-"));
+    try {
+      const inventory = loadInventory({
+        evis: {
+          "evi-a": {
+            runtime: "ccc",
+          },
+        },
+      });
+      const event = createFeedbackEvent(
+        inventory,
+        "evi-a",
+        {
+          verdict: "remember",
+          text: "Prefer explicit route ownership.",
+          subject: "route",
+          source: "user",
+          confidence: 0.9,
+        },
+        "event-1",
+        "2026-05-13T00:00:00.000Z",
+      );
+      const path = appendMemoryEvent(join(root, "events.jsonl"), event);
+      const lines = readFileSync(path, "utf8").trim().split("\n");
+      expect(lines.length).toBe(1);
+      expect(JSON.parse(lines[0]).target_evi).toBe("evi-a");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects feedback for unknown evi", () => {
+    const inventory = loadInventory({});
+    expect(() => createFeedbackEvent(inventory, "evi-missing", { verdict: "remember", text: "x" })).toThrow("unknown evi");
   });
 });
 

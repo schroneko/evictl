@@ -227,6 +227,14 @@ When discovery sees two active primary candidates for the same Telegram account,
 it demotes the whole conflicting group to `standby` and emits a warning. A human
 or later `route set` command must choose the owner explicitly.
 
+## Shared memory event notes
+
+The first memory implementation records human feedback as JSONL events. This is
+the lowest-risk shared memory layer because it keeps provenance and avoids raw
+transcript copying. Each event stores a stable id, timestamp, source, target evi,
+subject, verdict, confidence, and text. Later compilers can promote those events
+into notes, lessons, or policy files.
+
 ## Candidate command surface
 
 - `evictl ps`

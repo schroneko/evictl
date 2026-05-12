@@ -39,6 +39,7 @@ evictl stop
 evictl route list
 evictl route set
 evictl memory status
+evictl feedback
 evictl inspect
 ```
 
@@ -50,7 +51,6 @@ evictl send
 evictl sync
 evictl memory search
 evictl memory promote
-evictl feedback
 ```
 
 ## Configuration
@@ -84,6 +84,16 @@ explicit.
 
 `route set` refuses duplicate `primary` ownership for the same
 channel/account/peer unless `--force` is passed.
+
+Record feedback into the shared memory event log:
+
+```bash
+evictl feedback evi-ccc-telegram --verdict remember --text "Prefer explicit route ownership."
+```
+
+Feedback is appended as JSONL with the target evi, source, verdict, confidence,
+subject, and text. This is the first shared-memory sink; later sync commands can
+compile those events into runtime-native memory stores.
 
 Example:
 
