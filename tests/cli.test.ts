@@ -22,6 +22,7 @@ import {
   resolveTarget,
   setRouteConfig,
   spawnEviConfig,
+  tmuxSendCommands,
 } from "../src/cli.ts";
 
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -66,7 +67,9 @@ describe("inventory", () => {
     try {
       process.env.XDG_CONFIG_HOME = root;
       const inventory = loadInventory();
-      expect(new Set(Object.keys(inventory.evis))).toEqual(new Set(["evi-openclaw", "evi-hermes", "evi-ccc"]));
+      expect(new Set(Object.keys(inventory.evis))).toEqual(
+        new Set(["evi-openclaw", "evi-hermes", "evi-ccc"]),
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -138,9 +141,30 @@ describe("inventory", () => {
 describe("routes", () => {
   test("duplicate primary routes detect same surface", () => {
     const routes: Record<string, Route> = {
-      a: { key: "a", channel: "telegram", accountId: "main", peerId: "1", targetEvi: "evi-a", mode: "primary" },
-      b: { key: "b", channel: "telegram", accountId: "main", peerId: "1", targetEvi: "evi-b", mode: "primary" },
-      c: { key: "c", channel: "telegram", accountId: "main", peerId: "1", targetEvi: "evi-c", mode: "mirror" },
+      a: {
+        key: "a",
+        channel: "telegram",
+        accountId: "main",
+        peerId: "1",
+        targetEvi: "evi-a",
+        mode: "primary",
+      },
+      b: {
+        key: "b",
+        channel: "telegram",
+        accountId: "main",
+        peerId: "1",
+        targetEvi: "evi-b",
+        mode: "primary",
+      },
+      c: {
+        key: "c",
+        channel: "telegram",
+        accountId: "main",
+        peerId: "1",
+        targetEvi: "evi-c",
+        mode: "mirror",
+      },
     };
     const conflicts = duplicatePrimaryRoutes(routes);
     expect([...conflicts.keys()]).toEqual(["telegram\u0000main\u00001"]);
@@ -164,7 +188,9 @@ describe("routes", () => {
         mode: "primary",
       },
     );
-    expect((next.routes as Record<string, Record<string, string>>)["telegram:main"].target_evi).toBe("evi-a");
+    expect(
+      (next.routes as Record<string, Record<string, string>>)["telegram:main"].target_evi,
+    ).toBe("evi-a");
   });
 
   test("rejects duplicate primary routes unless forced", () => {
@@ -246,7 +272,9 @@ describe("memory events", () => {
 
   test("rejects feedback for unknown evi", () => {
     const inventory = loadInventory({});
-    expect(() => createFeedbackEvent(inventory, "evi-missing", { verdict: "remember", text: "x" })).toThrow("unknown evi");
+    expect(() =>
+      createFeedbackEvent(inventory, "evi-missing", { verdict: "remember", text: "x" }),
+    ).toThrow("unknown evi");
   });
 
   test("creates task events for send", () => {
@@ -312,6 +340,23 @@ describe("memory events", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("tmux send", () => {
+  test("sends text as literal keys with a separate Enter", () => {
+    const commands = tmuxSendCommands("evi-session", "C-c rm -rf /");
+    expect(commands).toEqual([
+      ["tmux", "send-keys", "-t", "evi-session", "-l", "--", "C-c rm -rf /"],
+      ["tmux", "send-keys", "-t", "evi-session", "Enter"],
+    ]);
+  });
+
+  test("does not interpret tmux key names embedded in text", () => {
+    const [literal] = tmuxSendCommands("s", "Enter PageDown -l");
+    expect(literal).toContain("-l");
+    expect(literal).toContain("--");
+    expect(literal[literal.length - 1]).toBe("Enter PageDown -l");
   });
 });
 
@@ -384,7 +429,10 @@ describe("discovery", () => {
       },
       discovery,
     );
-    expect(Object.keys(merged.routes as Record<string, unknown>).sort()).toEqual(["telegram:ccc:default", "telegram:manual"]);
+    expect(Object.keys(merged.routes as Record<string, unknown>).sort()).toEqual([
+      "telegram:ccc:default",
+      "telegram:manual",
+    ]);
     expect((merged.memory as Record<string, unknown>).event_log).toBe("/tmp/custom-events.jsonl");
     expect((merged.evis as Record<string, unknown>)["evi-ccc-telegram"]).toBeTruthy();
   });

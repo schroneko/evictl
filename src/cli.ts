@@ -2,7 +2,14 @@
 
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -186,12 +193,16 @@ function stringValue(value: unknown, fallback = ""): string {
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function stringMap(value: unknown): Record<string, string> {
   const raw = objectValue(value);
-  const entries = Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  const entries = Object.entries(raw).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
   return Object.fromEntries(entries);
 }
 
@@ -211,7 +222,10 @@ export function loadTargets(data = loadConfigData()): Record<string, Target> {
       label: stringValue(raw.label, base.label ?? "") || undefined,
       plist: stringValue(raw.plist, base.plist ?? "") || undefined,
       tmuxSessions: stringArray(raw.tmux_sessions ?? raw.tmuxSessions, base.tmuxSessions),
-      processPatterns: stringArray(raw.process_patterns ?? raw.processPatterns, base.processPatterns),
+      processPatterns: stringArray(
+        raw.process_patterns ?? raw.processPatterns,
+        base.processPatterns,
+      ),
       healthPatterns: stringArray(raw.health_patterns ?? raw.healthPatterns, base.healthPatterns),
     };
   }
@@ -268,8 +282,14 @@ export function loadInventory(data = loadConfigData()): Inventory {
     targets,
     evis,
     routes,
-    memoryEventLog: stringValue(memory.event_log ?? memory.eventLog, "~/.local/share/evictl/events.jsonl"),
-    memoryCompiledNotes: stringValue(memory.compiled_notes ?? memory.compiledNotes, "~/.local/share/evictl/memory"),
+    memoryEventLog: stringValue(
+      memory.event_log ?? memory.eventLog,
+      "~/.local/share/evictl/events.jsonl",
+    ),
+    memoryCompiledNotes: stringValue(
+      memory.compiled_notes ?? memory.compiledNotes,
+      "~/.local/share/evictl/memory",
+    ),
   };
 }
 
@@ -345,10 +365,15 @@ function targetWithPlist(runtime: string, data: Record<string, unknown>, path: s
   };
 }
 
-function addHermesDiscovery(discovery: Discovery, record: PlistRecord, runningByRuntime: Record<string, boolean>): void {
+function addHermesDiscovery(
+  discovery: Discovery,
+  record: PlistRecord,
+  runningByRuntime: Record<string, boolean>,
+): void {
   const args = plistArgs(record.data);
   const env = stringMap(record.data.EnvironmentVariables);
-  const home = env.HERMES_HOME || join(homedir(), ".hermes", "profiles", profileFromArgs(args) ?? "default");
+  const home =
+    env.HERMES_HOME || join(homedir(), ".hermes", "profiles", profileFromArgs(args) ?? "default");
   const profile = profileFromArgs(args) ?? basename(home) ?? "default";
   const eviId = `evi-hermes-${slug(profile)}`;
   discovery.targets.hermes = targetWithPlist("hermes", record.data, record.path);
@@ -395,10 +420,16 @@ function addHermesDiscovery(discovery: Discovery, record: PlistRecord, runningBy
   }
 }
 
-function addCccDiscovery(discovery: Discovery, record: PlistRecord, runningByRuntime: Record<string, boolean>): void {
+function addCccDiscovery(
+  discovery: Discovery,
+  record: PlistRecord,
+  runningByRuntime: Record<string, boolean>,
+): void {
   const args = plistArgs(record.data);
   const startScript = args.find((arg) => arg.includes("claude-telegram-channel")) ?? "";
-  const stateDir = startScript ? dirname(startScript) : join(homedir(), ".local", "share", "claude-telegram-channel");
+  const stateDir = startScript
+    ? dirname(startScript)
+    : join(homedir(), ".local", "share", "claude-telegram-channel");
   const script = startScript ? readTextIfExists(startScript) : "";
   const sessionName = shellAssignedValue(script, "session_name");
   const agentName = shellFlagValue(script, "--name");
@@ -439,7 +470,11 @@ function addCccDiscovery(discovery: Discovery, record: PlistRecord, runningByRun
   }
 }
 
-function addOpenClawDiscovery(discovery: Discovery, record: PlistRecord, runningByRuntime: Record<string, boolean>): void {
+function addOpenClawDiscovery(
+  discovery: Discovery,
+  record: PlistRecord,
+  runningByRuntime: Record<string, boolean>,
+): void {
   const args = plistArgs(record.data);
   const profile = profileFromArgs(args) ?? "default";
   const eviId = `evi-openclaw-${slug(profile)}`;
@@ -471,9 +506,22 @@ function addOpenClawDiscovery(discovery: Discovery, record: PlistRecord, running
 }
 
 function classifyPlist(record: PlistRecord): "hermes" | "ccc" | "openclaw" | undefined {
-  const haystack = [record.path, plistLabel(record.data), ...plistArgs(record.data), plistWorkingDirectory(record.data)].join("\n").toLowerCase();
-  if (haystack.includes("claude-telegram-channel") || haystack.includes("claude-code-channels")) return "ccc";
-  if (haystack.includes("hermes_cli.main") || haystack.includes("hermes-agent") || haystack.includes("ai.hermes")) return "hermes";
+  const haystack = [
+    record.path,
+    plistLabel(record.data),
+    ...plistArgs(record.data),
+    plistWorkingDirectory(record.data),
+  ]
+    .join("\n")
+    .toLowerCase();
+  if (haystack.includes("claude-telegram-channel") || haystack.includes("claude-code-channels"))
+    return "ccc";
+  if (
+    haystack.includes("hermes_cli.main") ||
+    haystack.includes("hermes-agent") ||
+    haystack.includes("ai.hermes")
+  )
+    return "hermes";
   if (haystack.includes("openclaw") || haystack.includes("open-claw")) return "openclaw";
   return undefined;
 }
@@ -482,11 +530,16 @@ function demoteDuplicatePrimaryRoutes(discovery: Discovery): void {
   const conflicts = duplicatePrimaryRoutes(discovery.routes);
   for (const [owner, routes] of conflicts) {
     for (const route of routes) route.mode = "standby";
-    discovery.warnings.push(`route conflict ${ownerLabel(owner)} imported as standby: ${routes.map((route) => route.key).join(", ")}`);
+    discovery.warnings.push(
+      `route conflict ${ownerLabel(owner)} imported as standby: ${routes.map((route) => route.key).join(", ")}`,
+    );
   }
 }
 
-export function discoverFromPlistRecords(records: PlistRecord[], runningByRuntime: Record<string, boolean> = {}): Discovery {
+export function discoverFromPlistRecords(
+  records: PlistRecord[],
+  runningByRuntime: Record<string, boolean> = {},
+): Discovery {
   const discovery = defaultDiscovery();
   for (const record of records) {
     const runtime = classifyPlist(record);
@@ -511,7 +564,9 @@ function launchAgentRecords(): PlistRecord[] {
   const dir = join(homedir(), "Library", "LaunchAgents");
   if (!existsSync(dir)) return [];
   const records: PlistRecord[] = [];
-  for (const name of readdirSync(dir).filter((item) => item.endsWith(".plist")).sort()) {
+  for (const name of readdirSync(dir)
+    .filter((item) => item.endsWith(".plist"))
+    .sort()) {
     const path = join(dir, name);
     const data = readPlist(path);
     if (data) records.push({ path, data });
@@ -520,7 +575,9 @@ function launchAgentRecords(): PlistRecord[] {
 }
 
 export function discoverLocalSetup(): Discovery {
-  const runningByRuntime = Object.fromEntries(Object.entries(loadTargets()).map(([name, target]) => [name, statusFor(target).running]));
+  const runningByRuntime = Object.fromEntries(
+    Object.entries(loadTargets()).map(([name, target]) => [name, statusFor(target).running]),
+  );
   return discoverFromPlistRecords(launchAgentRecords(), runningByRuntime);
 }
 
@@ -555,7 +612,11 @@ function routeToConfig(route: Route): Record<string, unknown> {
   };
 }
 
-export function setRouteConfig(data: Record<string, unknown>, route: Route, force = false): Record<string, unknown> {
+export function setRouteConfig(
+  data: Record<string, unknown>,
+  route: Route,
+  force = false,
+): Record<string, unknown> {
   const inventory = loadInventory(data);
   if (!inventory.evis[route.targetEvi]) {
     const known = Object.keys(inventory.evis).sort().join(", ");
@@ -569,13 +630,17 @@ export function setRouteConfig(data: Record<string, unknown>, route: Route, forc
   if (!force && conflicts.size > 0) {
     for (const [owner, conflictRoutes] of conflicts) {
       if (conflictRoutes.some((item) => item.key === route.key)) {
-        throw new Error(`duplicate primary route ${ownerLabel(owner)}: ${conflictRoutes.map((item) => item.key).join(", ")}`);
+        throw new Error(
+          `duplicate primary route ${ownerLabel(owner)}: ${conflictRoutes.map((item) => item.key).join(", ")}`,
+        );
       }
     }
   }
   return {
     ...data,
-    routes: Object.fromEntries(Object.entries(routes).map(([key, value]) => [key, routeToConfig(value)])),
+    routes: Object.fromEntries(
+      Object.entries(routes).map(([key, value]) => [key, routeToConfig(value)]),
+    ),
   };
 }
 
@@ -590,7 +655,11 @@ function eviConfig(evi: Evi): Record<string, unknown> {
   };
 }
 
-export function spawnEviConfig(data: Record<string, unknown>, evi: Evi, force = false): Record<string, unknown> {
+export function spawnEviConfig(
+  data: Record<string, unknown>,
+  evi: Evi,
+  force = false,
+): Record<string, unknown> {
   const inventory = loadInventory(data);
   if (!inventory.targets[evi.runtime]) {
     const known = Object.keys(inventory.targets).sort().join(", ");
@@ -608,9 +677,13 @@ export function spawnEviConfig(data: Record<string, unknown>, evi: Evi, force = 
   };
 }
 
-export function mergeConfigData(existing: Record<string, unknown>, discovery: Discovery): Record<string, unknown> {
+export function mergeConfigData(
+  existing: Record<string, unknown>,
+  discovery: Discovery,
+): Record<string, unknown> {
   const targets = { ...objectValue(existing.targets) };
-  for (const [name, target] of Object.entries(discovery.targets)) targets[name] = targetToConfig(target);
+  for (const [name, target] of Object.entries(discovery.targets))
+    targets[name] = targetToConfig(target);
   const evis = { ...objectValue(existing.evis) };
   for (const [eviId, evi] of Object.entries(discovery.evis)) evis[eviId] = eviToConfig(evi);
   const routes = { ...objectValue(existing.routes) };
@@ -753,7 +826,9 @@ function printStatuses(statuses: TargetStatus[]): void {
     const pids = item.pids.join(",") || "-";
     const tmux = item.tmuxSessions.join(",") || "-";
     const notes = item.notes.join(",") || "-";
-    console.log(`${item.name.padEnd(width)}  ${state.padEnd(7)}  ${health.padEnd(7)}  pids=${pids}  tmux=${tmux}  notes=${notes}`);
+    console.log(
+      `${item.name.padEnd(width)}  ${state.padEnd(7)}  ${health.padEnd(7)}  pids=${pids}  tmux=${tmux}  notes=${notes}`,
+    );
   }
 }
 
@@ -914,19 +989,26 @@ export function compileMemoryNotes(events: MemoryEvent[], limit = 100): string {
     return lines.join("\n");
   }
   const byEvi = new Map<string, MemoryEvent[]>();
-  for (const event of selected) byEvi.set(event.target_evi, [...(byEvi.get(event.target_evi) ?? []), event]);
+  for (const event of selected)
+    byEvi.set(event.target_evi, [...(byEvi.get(event.target_evi) ?? []), event]);
   for (const [targetEvi, targetEvents] of [...byEvi].sort(([a], [b]) => a.localeCompare(b))) {
     lines.push(`## ${targetEvi}`, "");
     for (const event of targetEvents) {
       const subject = event.subject ? ` subject=${event.subject}` : "";
-      lines.push(`- ${event.timestamp} ${event.verdict || event.type} confidence=${event.confidence}${subject}: ${compactText(event.text)}`);
+      lines.push(
+        `- ${event.timestamp} ${event.verdict || event.type} confidence=${event.confidence}${subject}: ${compactText(event.text)}`,
+      );
     }
     lines.push("");
   }
   return lines.join("\n");
 }
 
-export function promoteMemoryEvents(eventLog: string, compiledNotes: string, limit = 100): { eventCount: number; notePath: string } {
+export function promoteMemoryEvents(
+  eventLog: string,
+  compiledNotes: string,
+  limit = 100,
+): { eventCount: number; notePath: string } {
   const events = readMemoryEvents(eventLog);
   const notesDir = concretePath(compiledNotes);
   mkdirSync(notesDir, { recursive: true });
@@ -935,16 +1017,36 @@ export function promoteMemoryEvents(eventLog: string, compiledNotes: string, lim
   return { eventCount: Math.min(events.length, limit), notePath };
 }
 
-function dispatchTask(evi: Evi, text: string, queueOnly: boolean): { delivered: boolean; method: string; detail: string } {
+export function tmuxSendCommands(sessionId: string, text: string): string[][] {
+  return [
+    ["tmux", "send-keys", "-t", sessionId, "-l", "--", text],
+    ["tmux", "send-keys", "-t", sessionId, "Enter"],
+  ];
+}
+
+function dispatchTask(
+  evi: Evi,
+  text: string,
+  queueOnly: boolean,
+): { delivered: boolean; method: string; detail: string } {
   if (queueOnly) return { delivered: false, method: "queue", detail: "queue-only" };
   if (!evi.sessionId) return { delivered: false, method: "queue", detail: "missing-session" };
-  if (!tmuxExists(evi.sessionId)) return { delivered: false, method: "tmux", detail: "session-missing" };
-  const result = run(["tmux", "send-keys", "-t", evi.sessionId, text, "Enter"]);
-  if (result.code !== 0) return { delivered: false, method: "tmux", detail: result.stderr.trim() || "send-failed" };
+  if (!tmuxExists(evi.sessionId))
+    return { delivered: false, method: "tmux", detail: "session-missing" };
+  for (const command of tmuxSendCommands(evi.sessionId, text)) {
+    const result = run(command);
+    if (result.code !== 0)
+      return { delivered: false, method: "tmux", detail: result.stderr.trim() || "send-failed" };
+  }
   return { delivered: true, method: "tmux", detail: evi.sessionId };
 }
 
-export function queueTaskEvent(inventory: Inventory, targetEvi: string, text: string, values: { subject?: string; source?: string } = {}): MemoryEvent {
+export function queueTaskEvent(
+  inventory: Inventory,
+  targetEvi: string,
+  text: string,
+  values: { subject?: string; source?: string } = {},
+): MemoryEvent {
   return createTaskEvent(inventory, targetEvi, { ...values, text });
 }
 
@@ -953,14 +1055,20 @@ function printDiscovery(discovery: Discovery): void {
   console.log(`targets=${targets.length ? targets.join(",") : "-"}`);
   const evis = Object.values(discovery.evis).sort((a, b) => a.eviId.localeCompare(b.eviId));
   for (const evi of evis) {
-    console.log(`evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`);
+    console.log(
+      `evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`,
+    );
   }
   const routes = Object.values(discovery.routes).sort((a, b) => a.key.localeCompare(b.key));
   for (const route of routes) {
-    console.log(`route=${route.key} channel=${route.channel} account=${route.accountId || "-"} peer=${route.peerId || "-"} target=${route.targetEvi} mode=${route.mode}`);
+    console.log(
+      `route=${route.key} channel=${route.channel} account=${route.accountId || "-"} peer=${route.peerId || "-"} target=${route.targetEvi} mode=${route.mode}`,
+    );
   }
   for (const source of discovery.sources) {
-    console.log(`source=${source.runtime} kind=${source.kind} label=${source.label || "-"} status=${source.status} path=${source.path}`);
+    console.log(
+      `source=${source.runtime} kind=${source.kind} label=${source.label || "-"} status=${source.status} path=${source.path}`,
+    );
   }
   for (const warning of discovery.warnings) console.error(`warning: ${warning}`);
 }
@@ -1002,14 +1110,20 @@ function cmdImport(args: string[]): number {
 
 function cmdPs(): number {
   const inventory = loadInventory();
-  const statuses = Object.fromEntries(Object.values(inventory.targets).map((target) => [target.name, statusFor(target)]));
+  const statuses = Object.fromEntries(
+    Object.values(inventory.targets).map((target) => [target.name, statusFor(target)]),
+  );
   const width = Math.max(...Object.values(inventory.evis).map((evi) => evi.eviId.length));
   for (const evi of Object.values(inventory.evis).sort((a, b) => a.eviId.localeCompare(b.eviId))) {
     const status = statuses[evi.runtime];
     const state = status ? (status.running ? "running" : "stopped") : "unknown";
     const health = status ? (status.healthy ? "healthy" : "unknown") : "unknown";
-    const routes = Object.values(inventory.routes).filter((route) => route.targetEvi === evi.eviId).length;
-    console.log(`${evi.eviId.padEnd(width)}  runtime=${evi.runtime.padEnd(20)}  profile=${evi.profile.padEnd(10)}  state=${state.padEnd(7)}  health=${health.padEnd(7)}  routes=${routes}`);
+    const routes = Object.values(inventory.routes).filter(
+      (route) => route.targetEvi === evi.eviId,
+    ).length;
+    console.log(
+      `${evi.eviId.padEnd(width)}  runtime=${evi.runtime.padEnd(20)}  profile=${evi.profile.padEnd(10)}  state=${state.padEnd(7)}  health=${health.padEnd(7)}  routes=${routes}`,
+    );
   }
   return 0;
 }
@@ -1020,7 +1134,8 @@ function cmdSpawn(args: string[]): number {
   const data = loadConfigData(path);
   const targets = loadTargets(data);
   const runtime = resolveTarget(runtimeArg, targets);
-  const eviId = optionValue(args, "--id") ?? `evi-${runtime}-${optionValue(args, "--profile") ?? "default"}`;
+  const eviId =
+    optionValue(args, "--id") ?? `evi-${runtime}-${optionValue(args, "--profile") ?? "default"}`;
   const evi: Evi = {
     eviId,
     runtime,
@@ -1031,7 +1146,9 @@ function cmdSpawn(args: string[]): number {
     stateDir: optionValue(args, "--state-dir") ?? "",
   };
   writeConfigData(path, spawnEviConfig(data, evi, hasFlag(args, "--force")));
-  console.log(`evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`);
+  console.log(
+    `evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`,
+  );
   return 0;
 }
 
@@ -1044,7 +1161,9 @@ function cmdRouteList(): number {
   }
   const width = Math.max(...routes.map((route) => route.key.length));
   for (const route of routes.sort((a, b) => a.key.localeCompare(b.key))) {
-    console.log(`${route.key.padEnd(width)}  channel=${route.channel}  account=${route.accountId || "-"}  peer=${route.peerId || "-"}  target=${route.targetEvi}  mode=${route.mode}`);
+    console.log(
+      `${route.key.padEnd(width)}  channel=${route.channel}  account=${route.accountId || "-"}  peer=${route.peerId || "-"}  target=${route.targetEvi}  mode=${route.mode}`,
+    );
   }
   return 0;
 }
@@ -1071,21 +1190,29 @@ function cmdRouteSet(args: string[]): number {
   };
   const next = setRouteConfig(data, route, hasFlag(args, "--force"));
   writeConfigData(path, next);
-  console.log(`route=${route.key} channel=${route.channel} account=${route.accountId || "-"} peer=${route.peerId || "-"} target=${route.targetEvi} mode=${route.mode}`);
+  console.log(
+    `route=${route.key} channel=${route.channel} account=${route.accountId || "-"} peer=${route.peerId || "-"} target=${route.targetEvi} mode=${route.mode}`,
+  );
   return 0;
 }
 
 function cmdMemoryStatus(): number {
   const inventory = loadInventory();
   console.log(`event_log=${expandPath(inventory.memoryEventLog) ?? inventory.memoryEventLog}`);
-  console.log(`compiled_notes=${expandPath(inventory.memoryCompiledNotes) ?? inventory.memoryCompiledNotes}`);
+  console.log(
+    `compiled_notes=${expandPath(inventory.memoryCompiledNotes) ?? inventory.memoryCompiledNotes}`,
+  );
   return 0;
 }
 
 function cmdMemoryPromote(args: string[]): number {
   const path = optionValue(args, "--config") ?? configPath();
   const inventory = loadInventory(loadConfigData(path));
-  const result = promoteMemoryEvents(inventory.memoryEventLog, inventory.memoryCompiledNotes, numberOption(args, "--limit", 100));
+  const result = promoteMemoryEvents(
+    inventory.memoryEventLog,
+    inventory.memoryCompiledNotes,
+    numberOption(args, "--limit", 100),
+  );
   console.log(`promoted=${result.eventCount} notes=${result.notePath}`);
   return 0;
 }
@@ -1093,7 +1220,11 @@ function cmdMemoryPromote(args: string[]): number {
 function cmdSync(args: string[]): number {
   const path = optionValue(args, "--config") ?? configPath();
   const inventory = loadInventory(loadConfigData(path));
-  const result = promoteMemoryEvents(inventory.memoryEventLog, inventory.memoryCompiledNotes, numberOption(args, "--limit", 100));
+  const result = promoteMemoryEvents(
+    inventory.memoryEventLog,
+    inventory.memoryCompiledNotes,
+    numberOption(args, "--limit", 100),
+  );
   console.log(`sync=memory promoted=${result.eventCount} notes=${result.notePath}`);
   return 0;
 }
@@ -1114,13 +1245,19 @@ function cmdSend(args: string[]): number {
     source: optionValue(args, "--source"),
   });
   if (hasFlag(args, "--dry-run")) {
-    console.log(`dry_run=send target=${targetEvi} method=${evi.sessionId ? "tmux" : "queue"} text=${compactText(text)}`);
+    console.log(
+      `dry_run=send target=${targetEvi} method=${evi.sessionId ? "tmux" : "queue"} text=${compactText(text)}`,
+    );
     return 0;
   }
   const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
   const result = dispatchTask(evi, text, hasFlag(args, "--queue-only"));
-  console.log(`event=${event.id} type=${event.type} target=${event.target_evi} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`);
-  return result.method === "tmux" && !result.delivered && result.detail !== "session-missing" ? 1 : 0;
+  console.log(
+    `event=${event.id} type=${event.type} target=${event.target_evi} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`,
+  );
+  return result.method === "tmux" && !result.delivered && result.detail !== "session-missing"
+    ? 1
+    : 0;
 }
 
 function cmdFeedback(args: string[]): number {
@@ -1135,7 +1272,9 @@ function cmdFeedback(args: string[]): number {
     confidence: numberOption(args, "--confidence", 1),
   });
   const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
-  console.log(`event=${event.id} type=${event.type} target=${event.target_evi} verdict=${event.verdict} log=${eventLog}`);
+  console.log(
+    `event=${event.id} type=${event.type} target=${event.target_evi} verdict=${event.verdict} log=${eventLog}`,
+  );
   return 0;
 }
 
@@ -1158,7 +1297,9 @@ function cmdInspect(args: string[]): number {
   const routes = Object.values(inventory.routes).filter((route) => route.targetEvi === evi.eviId);
   console.log(`routes=${routes.length}`);
   for (const route of routes.sort((a, b) => a.key.localeCompare(b.key))) {
-    console.log(`- ${route.key}: ${route.channel}/${route.accountId || "-"}/${route.peerId || "-"} (${route.mode})`);
+    console.log(
+      `- ${route.key}: ${route.channel}/${route.accountId || "-"}/${route.peerId || "-"} (${route.mode})`,
+    );
   }
   return 0;
 }
@@ -1220,7 +1361,9 @@ function cmdDoctor(): number {
   const conflicts = duplicatePrimaryRoutes(loadInventory().routes);
   if (conflicts.size > 0) {
     for (const [owner, routes] of conflicts) {
-      console.error(`conflict: duplicate primary route ${ownerLabel(owner)}: ${routes.map((route) => route.key).join(", ")}`);
+      console.error(
+        `conflict: duplicate primary route ${ownerLabel(owner)}: ${routes.map((route) => route.key).join(", ")}`,
+      );
     }
     return 2;
   }
