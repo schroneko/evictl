@@ -31,18 +31,26 @@ bun run src/cli.ts ps
 
 ```bash
 evictl ps
+evictl discover
+evictl import
 evictl status
 evictl doctor
-evictl spawn
 evictl stop
 evictl route list
+evictl memory status
+evictl inspect
+```
+
+Planned next commands:
+
+```bash
+evictl spawn
 evictl route set
 evictl send
 evictl sync
 evictl memory search
 evictl memory promote
 evictl feedback
-evictl inspect
 ```
 
 ## Configuration
@@ -54,21 +62,48 @@ memory sync state. Override defaults with:
 ~/.config/evictl/config.json
 ```
 
+Import the current local setup:
+
+```bash
+evictl discover
+evictl import --dry-run
+evictl import
+```
+
+The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
+OpenClaw. Running runtimes are imported as `primary` routes; stopped runtimes are
+imported as `standby` routes so duplicate Telegram ownership stays visible and
+explicit.
+
 Example:
 
 ```json
 {
-  "runtimes": {
-    "openclaw": {
-      "profiles": ["default", "rescue"],
-      "base_port": 18789
+  "targets": {
+    "ccc": {
+      "label": "com.local.claude-telegram-channel",
+      "plist": "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
+      "tmux_sessions": ["claude-telegram-channel"],
+      "process_patterns": ["claude.*plugin:telegram", "nukoevi-telegram", "claude-telegram-channel"],
+      "health_patterns": ["Listening for channel messages from:"]
+    }
+  },
+  "evis": {
+    "evi-ccc-telegram": {
+      "runtime": "ccc",
+      "profile": "telegram",
+      "agent_id": "",
+      "session_id": "",
+      "workspace": "~/Documents/Codex/claude-code-channels",
+      "state_dir": "~/.local/share/claude-telegram-channel"
     }
   },
   "routes": {
-    "telegram:main": {
+    "telegram:ccc:default": {
       "channel": "telegram",
-      "account_id": "main",
-      "target_evi": "evi-main",
+      "account_id": "default",
+      "peer_id": "",
+      "target_evi": "evi-ccc-telegram",
       "mode": "primary"
     }
   },

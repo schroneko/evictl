@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 export type Target = {
   name: string;
@@ -49,6 +49,31 @@ export type Inventory = {
   routes: Record<string, Route>;
   memoryEventLog: string;
   memoryCompiledNotes: string;
+};
+
+export type DiscoverySource = {
+  runtime: string;
+  kind: string;
+  path: string;
+  label: string;
+  status: string;
+};
+
+export type Discovery = {
+  targets: Record<string, Target>;
+  evis: Record<string, Evi>;
+  routes: Record<string, Route>;
+  memory: {
+    eventLog: string;
+    compiledNotes: string;
+  };
+  sources: DiscoverySource[];
+  warnings: string[];
+};
+
+export type PlistRecord = {
+  path: string;
+  data: Record<string, unknown>;
 };
 
 type RunResult = {
@@ -120,10 +145,14 @@ export function configPath(): string {
   return join(homedir(), ".config", "evictl", "config.json");
 }
 
-export function loadConfigData(): Record<string, unknown> {
-  const path = configPath();
+export function loadConfigData(path = configPath()): Record<string, unknown> {
   if (!existsSync(path)) return {};
   return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+}
+
+function writeConfigData(path: string, data: Record<string, unknown>): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
 }
 
 function stringArray(value: unknown, fallback: string[]): string[] {
@@ -137,6 +166,12 @@ function stringValue(value: unknown, fallback = ""): string {
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringMap(value: unknown): Record<string, string> {
+  const raw = objectValue(value);
+  const entries = Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  return Object.fromEntries(entries);
 }
 
 export function loadTargets(): Record<string, Target> {
@@ -216,6 +251,309 @@ export function loadInventory(): Inventory {
     routes,
     memoryEventLog: stringValue(memory.event_log ?? memory.eventLog, "~/.local/share/evictl/events.jsonl"),
     memoryCompiledNotes: stringValue(memory.compiled_notes ?? memory.compiledNotes, "~/.local/share/evictl/memory"),
+  };
+}
+
+function defaultDiscovery(): Discovery {
+  return {
+    targets: {},
+    evis: {},
+    routes: {},
+    memory: {
+      eventLog: "~/.local/share/evictl/events.jsonl",
+      compiledNotes: "~/.local/share/evictl/memory",
+    },
+    sources: [],
+    warnings: [],
+  };
+}
+
+function slug(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "default";
+}
+
+function plistArgs(data: Record<string, unknown>): string[] {
+  return stringArray(data.ProgramArguments, []);
+}
+
+function plistLabel(data: Record<string, unknown>): string {
+  return stringValue(data.Label);
+}
+
+function plistWorkingDirectory(data: Record<string, unknown>): string {
+  return stringValue(data.WorkingDirectory);
+}
+
+function profileFromArgs(args: string[]): string | undefined {
+  const index = args.indexOf("--profile");
+  if (index >= 0 && args[index + 1]) return args[index + 1];
+  return undefined;
+}
+
+function routeMode(runningByRuntime: Record<string, boolean>, runtime: string): string {
+  return runningByRuntime[runtime] ? "primary" : "standby";
+}
+
+function readTextIfExists(path: string): string {
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+}
+
+function shellAssignedValue(script: string, name: string): string {
+  const match = script.match(new RegExp(`${name}=["']([^"']+)["']`));
+  return match?.[1] ?? "";
+}
+
+function shellFlagValue(script: string, name: string): string {
+  const match = script.match(new RegExp(`${name}\\s+([^\\s"']+)`));
+  return match?.[1] ?? "";
+}
+
+function targetWithPlist(runtime: string, data: Record<string, unknown>, path: string): Target {
+  const base = DEFAULT_TARGETS[runtime] ?? {
+    name: runtime,
+    tmuxSessions: [],
+    processPatterns: [runtime],
+    healthPatterns: [],
+  };
+  return {
+    ...base,
+    label: plistLabel(data) || base.label,
+    plist: path,
+  };
+}
+
+function addHermesDiscovery(discovery: Discovery, record: PlistRecord, runningByRuntime: Record<string, boolean>): void {
+  const args = plistArgs(record.data);
+  const env = stringMap(record.data.EnvironmentVariables);
+  const home = env.HERMES_HOME || join(homedir(), ".hermes", "profiles", profileFromArgs(args) ?? "default");
+  const profile = profileFromArgs(args) ?? basename(home) ?? "default";
+  const eviId = `evi-hermes-${slug(profile)}`;
+  discovery.targets.hermes = targetWithPlist("hermes", record.data, record.path);
+  discovery.evis[eviId] = {
+    eviId,
+    runtime: "hermes",
+    profile,
+    agentId: "",
+    sessionId: "",
+    workspace: plistWorkingDirectory(record.data) || join(homedir(), ".hermes", "hermes-agent"),
+    stateDir: home,
+  };
+  discovery.routes[`telegram:hermes:${slug(profile)}`] = {
+    key: `telegram:hermes:${slug(profile)}`,
+    channel: "telegram",
+    accountId: "default",
+    peerId: "",
+    targetEvi: eviId,
+    mode: routeMode(runningByRuntime, "hermes"),
+  };
+  discovery.sources.push({
+    runtime: "hermes",
+    kind: "launchd",
+    path: record.path,
+    label: plistLabel(record.data),
+    status: routeMode(runningByRuntime, "hermes"),
+  });
+  const stateFiles = [
+    ["channel-directory", "channel_directory.json"],
+    ["gateway-state", "gateway_state.json"],
+    ["sessions", "sessions/sessions.json"],
+  ] as const;
+  for (const [kind, file] of stateFiles) {
+    const path = join(home, file);
+    if (existsSync(path)) {
+      discovery.sources.push({
+        runtime: "hermes",
+        kind,
+        path,
+        label: profile,
+        status: "found",
+      });
+    }
+  }
+}
+
+function addCccDiscovery(discovery: Discovery, record: PlistRecord, runningByRuntime: Record<string, boolean>): void {
+  const args = plistArgs(record.data);
+  const startScript = args.find((arg) => arg.includes("claude-telegram-channel")) ?? "";
+  const stateDir = startScript ? dirname(startScript) : join(homedir(), ".local", "share", "claude-telegram-channel");
+  const script = startScript ? readTextIfExists(startScript) : "";
+  const sessionName = shellAssignedValue(script, "session_name");
+  const agentName = shellFlagValue(script, "--name");
+  const eviId = "evi-ccc-telegram";
+  discovery.targets.ccc = targetWithPlist("ccc", record.data, record.path);
+  discovery.evis[eviId] = {
+    eviId,
+    runtime: "ccc",
+    profile: "telegram",
+    agentId: agentName,
+    sessionId: sessionName,
+    workspace: plistWorkingDirectory(record.data) || shellAssignedValue(script, "workdir"),
+    stateDir,
+  };
+  discovery.routes["telegram:ccc:default"] = {
+    key: "telegram:ccc:default",
+    channel: "telegram",
+    accountId: "default",
+    peerId: "",
+    targetEvi: eviId,
+    mode: routeMode(runningByRuntime, "ccc"),
+  };
+  discovery.sources.push({
+    runtime: "ccc",
+    kind: "launchd",
+    path: record.path,
+    label: plistLabel(record.data),
+    status: routeMode(runningByRuntime, "ccc"),
+  });
+  if (startScript && existsSync(startScript)) {
+    discovery.sources.push({
+      runtime: "ccc",
+      kind: "start-script",
+      path: startScript,
+      label: agentName || "telegram",
+      status: sessionName || "found",
+    });
+  }
+}
+
+function addOpenClawDiscovery(discovery: Discovery, record: PlistRecord, runningByRuntime: Record<string, boolean>): void {
+  const args = plistArgs(record.data);
+  const profile = profileFromArgs(args) ?? "default";
+  const eviId = `evi-openclaw-${slug(profile)}`;
+  discovery.targets.openclaw = targetWithPlist("openclaw", record.data, record.path);
+  discovery.evis[eviId] = {
+    eviId,
+    runtime: "openclaw",
+    profile,
+    agentId: "",
+    sessionId: "",
+    workspace: plistWorkingDirectory(record.data),
+    stateDir: join(homedir(), ".openclaw"),
+  };
+  discovery.routes[`telegram:openclaw:${slug(profile)}`] = {
+    key: `telegram:openclaw:${slug(profile)}`,
+    channel: "telegram",
+    accountId: "default",
+    peerId: "",
+    targetEvi: eviId,
+    mode: routeMode(runningByRuntime, "openclaw"),
+  };
+  discovery.sources.push({
+    runtime: "openclaw",
+    kind: "launchd",
+    path: record.path,
+    label: plistLabel(record.data),
+    status: routeMode(runningByRuntime, "openclaw"),
+  });
+}
+
+function classifyPlist(record: PlistRecord): "hermes" | "ccc" | "openclaw" | undefined {
+  const haystack = [record.path, plistLabel(record.data), ...plistArgs(record.data), plistWorkingDirectory(record.data)].join("\n").toLowerCase();
+  if (haystack.includes("claude-telegram-channel") || haystack.includes("claude-code-channels")) return "ccc";
+  if (haystack.includes("hermes_cli.main") || haystack.includes("hermes-agent") || haystack.includes("ai.hermes")) return "hermes";
+  if (haystack.includes("openclaw") || haystack.includes("open-claw")) return "openclaw";
+  return undefined;
+}
+
+function demoteDuplicatePrimaryRoutes(discovery: Discovery): void {
+  const conflicts = duplicatePrimaryRoutes(discovery.routes);
+  for (const [owner, routes] of conflicts) {
+    for (const route of routes) route.mode = "standby";
+    discovery.warnings.push(`route conflict ${ownerLabel(owner)} imported as standby: ${routes.map((route) => route.key).join(", ")}`);
+  }
+}
+
+export function discoverFromPlistRecords(records: PlistRecord[], runningByRuntime: Record<string, boolean> = {}): Discovery {
+  const discovery = defaultDiscovery();
+  for (const record of records) {
+    const runtime = classifyPlist(record);
+    if (runtime === "hermes") addHermesDiscovery(discovery, record, runningByRuntime);
+    if (runtime === "ccc") addCccDiscovery(discovery, record, runningByRuntime);
+    if (runtime === "openclaw") addOpenClawDiscovery(discovery, record, runningByRuntime);
+  }
+  demoteDuplicatePrimaryRoutes(discovery);
+  if (!discovery.targets.openclaw && !existsSync(join(homedir(), ".openclaw"))) {
+    discovery.warnings.push("openclaw: no launch agent or ~/.openclaw directory found");
+  }
+  return discovery;
+}
+
+function readPlist(path: string): Record<string, unknown> | undefined {
+  const result = run(["plutil", "-convert", "json", "-o", "-", path]);
+  if (result.code !== 0) return undefined;
+  return JSON.parse(result.stdout) as Record<string, unknown>;
+}
+
+function launchAgentRecords(): PlistRecord[] {
+  const dir = join(homedir(), "Library", "LaunchAgents");
+  if (!existsSync(dir)) return [];
+  const records: PlistRecord[] = [];
+  for (const name of readdirSync(dir).filter((item) => item.endsWith(".plist")).sort()) {
+    const path = join(dir, name);
+    const data = readPlist(path);
+    if (data) records.push({ path, data });
+  }
+  return records;
+}
+
+export function discoverLocalSetup(): Discovery {
+  const runningByRuntime = Object.fromEntries(Object.entries(loadTargets()).map(([name, target]) => [name, statusFor(target).running]));
+  return discoverFromPlistRecords(launchAgentRecords(), runningByRuntime);
+}
+
+function targetToConfig(target: Target): Record<string, unknown> {
+  return {
+    label: target.label,
+    plist: target.plist,
+    tmux_sessions: target.tmuxSessions,
+    process_patterns: target.processPatterns,
+    health_patterns: target.healthPatterns,
+  };
+}
+
+function eviToConfig(evi: Evi): Record<string, unknown> {
+  return {
+    runtime: evi.runtime,
+    profile: evi.profile,
+    agent_id: evi.agentId,
+    session_id: evi.sessionId,
+    workspace: evi.workspace,
+    state_dir: evi.stateDir,
+  };
+}
+
+function routeToConfig(route: Route): Record<string, unknown> {
+  return {
+    channel: route.channel,
+    account_id: route.accountId,
+    peer_id: route.peerId,
+    target_evi: route.targetEvi,
+    mode: route.mode,
+  };
+}
+
+export function mergeConfigData(existing: Record<string, unknown>, discovery: Discovery): Record<string, unknown> {
+  const targets = { ...objectValue(existing.targets) };
+  for (const [name, target] of Object.entries(discovery.targets)) targets[name] = targetToConfig(target);
+  const evis = { ...objectValue(existing.evis) };
+  for (const [eviId, evi] of Object.entries(discovery.evis)) evis[eviId] = eviToConfig(evi);
+  const routes = { ...objectValue(existing.routes) };
+  for (const [key, route] of Object.entries(discovery.routes)) routes[key] = routeToConfig(route);
+  const memory = {
+    event_log: discovery.memory.eventLog,
+    compiled_notes: discovery.memory.compiledNotes,
+    ...objectValue(existing.memory),
+  };
+  return {
+    ...existing,
+    targets,
+    evis,
+    routes,
+    memory,
   };
 }
 
@@ -359,6 +697,68 @@ function displayPath(value: string): string {
   return expandPath(value) || value || "-";
 }
 
+function hasFlag(args: string[], flag: string): boolean {
+  return args.includes(flag);
+}
+
+function optionValue(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  return args[index + 1];
+}
+
+function printDiscovery(discovery: Discovery): void {
+  const targets = Object.keys(discovery.targets).sort();
+  console.log(`targets=${targets.length ? targets.join(",") : "-"}`);
+  const evis = Object.values(discovery.evis).sort((a, b) => a.eviId.localeCompare(b.eviId));
+  for (const evi of evis) {
+    console.log(`evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`);
+  }
+  const routes = Object.values(discovery.routes).sort((a, b) => a.key.localeCompare(b.key));
+  for (const route of routes) {
+    console.log(`route=${route.key} channel=${route.channel} account=${route.accountId || "-"} peer=${route.peerId || "-"} target=${route.targetEvi} mode=${route.mode}`);
+  }
+  for (const source of discovery.sources) {
+    console.log(`source=${source.runtime} kind=${source.kind} label=${source.label || "-"} status=${source.status} path=${source.path}`);
+  }
+  for (const warning of discovery.warnings) console.error(`warning: ${warning}`);
+}
+
+function cmdDiscover(args: string[]): number {
+  const discovery = discoverLocalSetup();
+  if (hasFlag(args, "--json")) {
+    console.log(JSON.stringify(discovery, null, 2));
+    return 0;
+  }
+  printDiscovery(discovery);
+  return 0;
+}
+
+function cmdImport(args: string[]): number {
+  const path = optionValue(args, "--config") ?? configPath();
+  const dryRun = hasFlag(args, "--dry-run");
+  const asJson = hasFlag(args, "--json");
+  const discovery = discoverLocalSetup();
+  const merged = mergeConfigData(loadConfigData(path), discovery);
+  if (dryRun) {
+    if (asJson) {
+      console.log(JSON.stringify(merged, null, 2));
+    } else {
+      printDiscovery(discovery);
+      console.log(`dry_run_config=${path}`);
+    }
+    return 0;
+  }
+  writeConfigData(path, merged);
+  if (asJson) {
+    console.log(JSON.stringify({ config: path, imported: discovery }, null, 2));
+  } else {
+    console.log(`wrote ${path}`);
+    printDiscovery(discovery);
+  }
+  return 0;
+}
+
 function cmdPs(): number {
   const inventory = loadInventory();
   const statuses = Object.fromEntries(Object.values(inventory.targets).map((target) => [target.name, statusFor(target)]));
@@ -498,6 +898,8 @@ function printHelp(): void {
 
 Commands:
   ps
+  discover [--json]
+  import [--dry-run] [--json] [--config <path>]
   status [target]
   targets
   start <target>
@@ -515,6 +917,8 @@ export function main(argv = process.argv.slice(2)): number {
   const [command, ...args] = argv;
   const commands: Record<string, Command> = {
     ps: () => cmdPs(),
+    discover: cmdDiscover,
+    import: cmdImport,
     status: cmdStatus,
     targets: () => cmdTargets(),
     start: cmdStart,

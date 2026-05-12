@@ -7,8 +7,10 @@ import {
   ALIASES,
   DEFAULT_TARGETS,
   type Route,
+  discoverFromPlistRecords,
   duplicatePrimaryRoutes,
   loadInventory,
+  mergeConfigData,
   resolveTarget,
 } from "../src/cli.ts";
 
@@ -89,5 +91,105 @@ describe("routes", () => {
     };
     const conflicts = duplicatePrimaryRoutes(routes);
     expect([...conflicts.keys()]).toEqual(["telegram\u0000main\u00001"]);
+  });
+});
+
+describe("discovery", () => {
+  test("discovers Hermes and Claude Code Channels launch agents", () => {
+    const discovery = discoverFromPlistRecords(
+      [
+        {
+          path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
+          data: {
+            Label: "ai.hermes.gateway-nukoevi",
+            ProgramArguments: [
+              "~/.hermes/hermes-agent/venv/bin/python",
+              "-m",
+              "hermes_cli.main",
+              "--profile",
+              "nukoevi",
+              "gateway",
+              "run",
+            ],
+            EnvironmentVariables: {
+              HERMES_HOME: "~/.hermes/profiles/nukoevi",
+            },
+            WorkingDirectory: "~/.hermes/hermes-agent",
+          },
+        },
+        {
+          path: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
+          data: {
+            Label: "com.local.claude-telegram-channel",
+            ProgramArguments: ["/bin/zsh", "~/.local/share/claude-telegram-channel/start.sh"],
+            WorkingDirectory: "~/Documents/Codex/hermes-agent-claude-code-channels",
+          },
+        },
+      ],
+      { ccc: true, hermes: false },
+    );
+    expect(Object.keys(discovery.targets).sort()).toEqual(["ccc", "hermes"]);
+    expect(discovery.evis["evi-hermes-nukoevi"].runtime).toBe("hermes");
+    expect(discovery.evis["evi-ccc-telegram"].runtime).toBe("ccc");
+    expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
+    expect(discovery.routes["telegram:ccc:default"].mode).toBe("primary");
+  });
+
+  test("merges discovered setup into config without dropping existing data", () => {
+    const discovery = discoverFromPlistRecords(
+      [
+        {
+          path: "/tmp/com.local.claude-telegram-channel.plist",
+          data: {
+            Label: "com.local.claude-telegram-channel",
+            ProgramArguments: ["/bin/zsh", "~/.local/share/claude-telegram-channel/start.sh"],
+            WorkingDirectory: "~/Documents/Codex/claude-code-channels",
+          },
+        },
+      ],
+      { ccc: true },
+    );
+    const merged = mergeConfigData(
+      {
+        routes: {
+          "telegram:manual": {
+            channel: "telegram",
+            target_evi: "evi-manual",
+          },
+        },
+        memory: {
+          event_log: "/tmp/custom-events.jsonl",
+        },
+      },
+      discovery,
+    );
+    expect(Object.keys(merged.routes as Record<string, unknown>).sort()).toEqual(["telegram:ccc:default", "telegram:manual"]);
+    expect((merged.memory as Record<string, unknown>).event_log).toBe("/tmp/custom-events.jsonl");
+    expect((merged.evis as Record<string, unknown>)["evi-ccc-telegram"]).toBeTruthy();
+  });
+
+  test("demotes duplicate primary routes during discovery", () => {
+    const discovery = discoverFromPlistRecords(
+      [
+        {
+          path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
+          data: {
+            Label: "ai.hermes.gateway-nukoevi",
+            ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "nukoevi"],
+          },
+        },
+        {
+          path: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
+          data: {
+            Label: "com.local.claude-telegram-channel",
+            ProgramArguments: ["/bin/zsh", "~/.local/share/claude-telegram-channel/start.sh"],
+          },
+        },
+      ],
+      { ccc: true, hermes: true },
+    );
+    expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
+    expect(discovery.routes["telegram:ccc:default"].mode).toBe("standby");
+    expect(discovery.warnings.some((warning) => warning.includes("route conflict"))).toBe(true);
   });
 });

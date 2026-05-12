@@ -207,9 +207,31 @@ Each runtime adapter should expose:
 - `import_memory`: write compiled memory into runtime-native storage
 - `doctor`: explain misconfiguration and collisions
 
+## Local setup discovery notes
+
+The first `evictl discover` implementation reads macOS launchd plists, then
+enriches the proposal with safe local state files:
+
+- Hermes Agent: launchd plist, profile `HERMES_HOME`, `channel_directory.json`,
+  `gateway_state.json`, and `sessions/sessions.json`
+- Claude Code Channels: launchd plist plus the local `start.sh` wrapper, including
+  tmux session name and Claude `--name`
+- OpenClaw: launchd plist or `~/.openclaw` when present
+
+Imported routes are intentionally broad at the Telegram account level at first.
+That is conservative: it prevents two evi runtimes from silently becoming
+primary owners of the same human-facing surface before peer-level routing is
+implemented.
+
+When discovery sees two active primary candidates for the same Telegram account,
+it demotes the whole conflicting group to `standby` and emits a warning. A human
+or later `route set` command must choose the owner explicitly.
+
 ## Candidate command surface
 
 - `evictl ps`
+- `evictl discover`
+- `evictl import`
 - `evictl status`
 - `evictl doctor`
 - `evictl spawn`
