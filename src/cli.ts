@@ -893,8 +893,12 @@ export function readMemoryEvents(eventLog: string): MemoryEvent[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .flatMap((line) => {
-      const parsed = parseMemoryEvent(JSON.parse(line));
-      return parsed ? [parsed] : [];
+      try {
+        const parsed = parseMemoryEvent(JSON.parse(line));
+        return parsed ? [parsed] : [];
+      } catch {
+        return [];
+      }
     });
 }
 

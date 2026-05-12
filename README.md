@@ -27,6 +27,23 @@ Run the CLI directly during development:
 bun run src/cli.ts ps
 ```
 
+## Installation
+
+`evictl` currently targets macOS and requires Bun because the published CLI entry
+uses a Bun shebang.
+
+```bash
+bunx evictl --help
+bun install -g evictl
+```
+
+For local development:
+
+```bash
+bun link
+evictl --help
+```
+
 ## Commands
 
 ```bash
@@ -145,7 +162,7 @@ Example:
       "profile": "telegram",
       "agent_id": "",
       "session_id": "",
-      "workspace": "~/Documents/Codex/claude-code-channels",
+      "workspace": "~/Documents/claude-code-channels",
       "state_dir": "~/.local/share/claude-telegram-channel"
     }
   },

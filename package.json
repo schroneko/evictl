@@ -3,13 +3,48 @@
   "version": "0.1.0",
   "description": "Orchestrate local evi agent runtimes and shared memory",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schroneko/evictl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/schroneko/evictl/issues"
+  },
+  "homepage": "https://github.com/schroneko/evictl#readme",
+  "keywords": [
+    "agent",
+    "orchestration",
+    "telegram",
+    "claude",
+    "openclaw",
+    "hermes"
+  ],
+  "packageManager": "bun@1.3.13",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "os": [
+    "darwin"
+  ],
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "bin": {
-    "evictl": "./src/cli.ts"
+    "evictl": "bin/evictl"
   },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test",
-    "build": "bun build ./src/cli.ts --compile --outfile ./dist/evictl"
+    "build": "bun build ./src/cli.ts --compile --outfile ./dist/evictl",
+    "prepack": "bun test && bun run check"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/bun": "latest",

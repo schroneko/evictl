@@ -16,28 +16,28 @@ Initial supported runtimes:
 
 ## Sources read
 
-- `~/ghq/github.com/openclaw/openclaw/README.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/concepts/session.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/concepts/multi-agent.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/concepts/session-tool.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/concepts/memory.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/concepts/active-memory.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/gateway/architecture.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/gateway/configuration.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/gateway/health.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/gateway/multiple-gateways.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/gateway/protocol.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/tools/subagents.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/tools/agent-send.md`
-- `~/ghq/github.com/openclaw/openclaw/docs/tools/acp-agents.md`
-- `~/ghq/github.com/NousResearch/hermes-agent/README.md`
-- `~/ghq/github.com/NousResearch/hermes-agent/gateway/run.py`
-- `~/ghq/github.com/NousResearch/hermes-agent/gateway/session.py`
-- `~/ghq/github.com/NousResearch/hermes-agent/gateway/platform_registry.py`
-- `~/ghq/github.com/NousResearch/hermes-agent/gateway/channel_directory.py`
-- `~/ghq/github.com/NousResearch/hermes-agent/agent/memory_provider.py`
-- `~/ghq/github.com/NousResearch/hermes-agent/agent/insights.py`
-- `~/ghq/github.com/NousResearch/hermes-agent/skills/software-development/subagent-driven-development/SKILL.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/README.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/concepts/session.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/concepts/multi-agent.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/concepts/session-tool.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/concepts/memory.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/concepts/active-memory.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/gateway/architecture.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/gateway/configuration.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/gateway/health.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/gateway/multiple-gateways.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/gateway/protocol.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/tools/subagents.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/tools/agent-send.md`
+- `${GHQ_ROOT}/github.com/openclaw/openclaw/docs/tools/acp-agents.md`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/README.md`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/gateway/run.py`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/gateway/session.py`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/gateway/platform_registry.py`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/gateway/channel_directory.py`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/agent/memory_provider.py`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/agent/insights.py`
+- `${GHQ_ROOT}/github.com/NousResearch/hermes-agent/skills/software-development/subagent-driven-development/SKILL.md`
 - `https://code.claude.com/docs/en/channels-reference`
 
 ## OpenClaw findings

@@ -302,6 +302,17 @@ describe("memory events", () => {
   test("compiles empty memory notes", () => {
     expect(compileMemoryNotes([])).toContain("No memory events promoted yet.");
   });
+
+  test("ignores malformed memory event lines", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-memory-malformed-test-"));
+    try {
+      const eventLog = join(root, "events.jsonl");
+      writeFileSync(eventLog, "not-json\n");
+      expect(readMemoryEvents(eventLog)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("discovery", () => {
