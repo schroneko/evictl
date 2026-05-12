@@ -1,0 +1,6 @@
+interface:
+  display_name: "evictl"
+  short_description: "Operate local evi runtimes and shared memory"
+  default_prompt: "Use $evictl to inspect local evi routes and validate evictl packaging."
+policy:
+  allow_implicit_invocation: true

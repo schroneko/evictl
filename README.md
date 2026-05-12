@@ -44,6 +44,13 @@ bun link
 evictl --help
 ```
 
+## Agent Skill
+
+The repository includes an Agent Skill at `skills/evictl`.
+
+Install or vendor it with your agent skill manager, then invoke it when managing
+local evi instances, routes, runtime handoff, or shared memory with `evictl`.
+
 ## Commands
 
 ```bash
