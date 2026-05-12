@@ -35,6 +35,7 @@ evictl discover
 evictl import
 evictl status
 evictl doctor
+evictl spawn
 evictl stop
 evictl route list
 evictl route set
@@ -48,7 +49,6 @@ evictl inspect
 Planned next commands:
 
 ```bash
-evictl spawn
 evictl send
 evictl memory search
 ```
@@ -76,6 +76,15 @@ Manage routes:
 evictl route list
 evictl route set telegram:main --target evi-ccc-telegram --account default --mode primary
 ```
+
+Create another evi identity:
+
+```bash
+evictl spawn ccc --id evi-ccc-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
+```
+
+`spawn` currently creates the isolated evi inventory entry. Runtime-specific
+process creation is still planned.
 
 The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
 OpenClaw. Running runtimes are imported as `primary` routes; stopped runtimes are

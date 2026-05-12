@@ -19,6 +19,7 @@ import {
   readMemoryEvents,
   resolveTarget,
   setRouteConfig,
+  spawnEviConfig,
 } from "../src/cli.ts";
 
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -91,6 +92,44 @@ describe("inventory", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("spawns configured evi inventory", () => {
+    const next = spawnEviConfig(
+      {},
+      {
+        eviId: "evi-ccc-research",
+        runtime: "ccc",
+        profile: "research",
+        agentId: "research-agent",
+        sessionId: "research-session",
+        workspace: "/tmp/research",
+        stateDir: "/tmp/research-state",
+      },
+    );
+    const inventory = loadInventory(next);
+    expect(inventory.evis["evi-ccc-research"].profile).toBe("research");
+  });
+
+  test("spawn rejects duplicate evi ids unless forced", () => {
+    const data = {
+      evis: {
+        "evi-ccc-research": {
+          runtime: "ccc",
+        },
+      },
+    };
+    const evi = {
+      eviId: "evi-ccc-research",
+      runtime: "ccc",
+      profile: "research",
+      agentId: "",
+      sessionId: "",
+      workspace: "",
+      stateDir: "",
+    };
+    expect(() => spawnEviConfig(data, evi)).toThrow("evi already exists");
+    expect(spawnEviConfig(data, evi, true).evis).toBeTruthy();
   });
 });
 

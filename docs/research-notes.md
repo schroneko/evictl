@@ -240,6 +240,13 @@ into notes, lessons, or policy files.
 event-to-notes path before adding runtime-native writers for Hermes, OpenClaw, or
 Claude Code Channels.
 
+## Evi inventory spawn notes
+
+`spawn` currently creates a new evi identity in `evictl` config with runtime,
+profile, agent id, session id, workspace, and state dir. It does not yet create a
+runtime-native process or agent session. That keeps identity and routing safe
+before adapter-specific creation is added.
+
 ## Candidate command surface
 
 - `evictl ps`

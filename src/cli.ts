@@ -571,6 +571,35 @@ export function setRouteConfig(data: Record<string, unknown>, route: Route, forc
   };
 }
 
+function eviConfig(evi: Evi): Record<string, unknown> {
+  return {
+    runtime: evi.runtime,
+    profile: evi.profile,
+    agent_id: evi.agentId,
+    session_id: evi.sessionId,
+    workspace: evi.workspace,
+    state_dir: evi.stateDir,
+  };
+}
+
+export function spawnEviConfig(data: Record<string, unknown>, evi: Evi, force = false): Record<string, unknown> {
+  const inventory = loadInventory(data);
+  if (!inventory.targets[evi.runtime]) {
+    const known = Object.keys(inventory.targets).sort().join(", ");
+    throw new Error(`unknown runtime: ${evi.runtime} (known: ${known})`);
+  }
+  if (!force && inventory.evis[evi.eviId]) {
+    throw new Error(`evi already exists: ${evi.eviId}`);
+  }
+  return {
+    ...data,
+    evis: {
+      ...objectValue(data.evis),
+      [evi.eviId]: eviConfig(evi),
+    },
+  };
+}
+
 export function mergeConfigData(existing: Record<string, unknown>, discovery: Discovery): Record<string, unknown> {
   const targets = { ...objectValue(existing.targets) };
   for (const [name, target] of Object.entries(discovery.targets)) targets[name] = targetToConfig(target);
@@ -935,6 +964,27 @@ function cmdPs(): number {
   return 0;
 }
 
+function cmdSpawn(args: string[]): number {
+  const runtimeArg = required(args[0], "spawn requires a runtime");
+  const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const targets = loadTargets(data);
+  const runtime = resolveTarget(runtimeArg, targets);
+  const eviId = optionValue(args, "--id") ?? `evi-${runtime}-${optionValue(args, "--profile") ?? "default"}`;
+  const evi: Evi = {
+    eviId,
+    runtime,
+    profile: optionValue(args, "--profile") ?? "default",
+    agentId: optionValue(args, "--agent") ?? optionValue(args, "--agent-id") ?? "",
+    sessionId: optionValue(args, "--session") ?? optionValue(args, "--session-id") ?? "",
+    workspace: optionValue(args, "--workspace") ?? "",
+    stateDir: optionValue(args, "--state-dir") ?? "",
+  };
+  writeConfigData(path, spawnEviConfig(data, evi, hasFlag(args, "--force")));
+  console.log(`evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`);
+  return 0;
+}
+
 function cmdRouteList(): number {
   const inventory = loadInventory();
   const routes = Object.values(inventory.routes);
@@ -1122,6 +1172,7 @@ Commands:
   import [--dry-run] [--json] [--config <path>]
   status [target]
   targets
+  spawn <runtime> [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--force]
   start <target>
   stop <target>
   stop-all
@@ -1145,6 +1196,7 @@ export function main(argv = process.argv.slice(2)): number {
     import: cmdImport,
     status: cmdStatus,
     targets: () => cmdTargets(),
+    spawn: cmdSpawn,
     start: cmdStart,
     stop: cmdStop,
     "stop-all": () => cmdStopAll(),
