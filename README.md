@@ -42,6 +42,7 @@ evictl route set
 evictl memory status
 evictl memory promote
 evictl sync
+evictl send
 evictl feedback
 evictl inspect
 ```
@@ -49,7 +50,6 @@ evictl inspect
 Planned next commands:
 
 ```bash
-evictl send
 evictl memory search
 ```
 
@@ -114,6 +114,17 @@ evictl sync
 Both commands compile feedback events from the JSONL event log into
 `compiled_notes/feedback.md`. Runtime-native memory writers are still planned,
 but the event-to-notes pipeline is available now.
+
+Send a task:
+
+```bash
+evictl send evi-ccc-telegram --text "Run the check suite." --queue-only
+evictl send evi-ccc-telegram --text "Run the check suite."
+```
+
+`send` records a task event before dispatch. For evi entries with a tmux
+`session_id`, it sends the task into that tmux session. `--queue-only` records
+the task without delivering it.
 
 Example:
 

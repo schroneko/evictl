@@ -10,12 +10,14 @@ import {
   appendMemoryEvent,
   compileMemoryNotes,
   createFeedbackEvent,
+  createTaskEvent,
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
   loadInventory,
   mergeConfigData,
   parseProcessPids,
   promoteMemoryEvents,
+  queueTaskEvent,
   readMemoryEvents,
   resolveTarget,
   setRouteConfig,
@@ -245,6 +247,30 @@ describe("memory events", () => {
   test("rejects feedback for unknown evi", () => {
     const inventory = loadInventory({});
     expect(() => createFeedbackEvent(inventory, "evi-missing", { verdict: "remember", text: "x" })).toThrow("unknown evi");
+  });
+
+  test("creates task events for send", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-a": {
+          runtime: "ccc",
+        },
+      },
+    });
+    const event = createTaskEvent(
+      inventory,
+      "evi-a",
+      {
+        text: "Run the check suite.",
+        subject: "check",
+        source: "user",
+      },
+      "task-1",
+      "2026-05-13T00:00:00.000Z",
+    );
+    expect(event.type).toBe("task");
+    expect(event.verdict).toBe("queued");
+    expect(queueTaskEvent(inventory, "evi-a", "Follow up").text).toBe("Follow up");
   });
 
   test("promotes feedback events into compiled notes", () => {

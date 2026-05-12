@@ -247,6 +247,13 @@ profile, agent id, session id, workspace, and state dir. It does not yet create 
 runtime-native process or agent session. That keeps identity and routing safe
 before adapter-specific creation is added.
 
+## Task send notes
+
+`send` records task requests as memory events before dispatch. If the target evi
+has a `session_id`, `evictl` treats it as a tmux session and sends the task with
+`tmux send-keys`. `--queue-only` stores the task without runtime dispatch, which
+is useful for testing and for evi entries that are not live yet.
+
 ## Candidate command surface
 
 - `evictl ps`

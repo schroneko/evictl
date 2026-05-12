@@ -64,6 +64,14 @@ export type MemoryEvent = {
   text: string;
 };
 
+export type SendResult = {
+  event: MemoryEvent;
+  eventLog: string;
+  delivered: boolean;
+  method: string;
+  detail: string;
+};
+
 export type DiscoverySource = {
   runtime: string;
   kind: string;
@@ -824,6 +832,31 @@ export function createFeedbackEvent(
   };
 }
 
+export function createTaskEvent(
+  inventory: Inventory,
+  targetEvi: string,
+  values: { text: string; subject?: string; source?: string },
+  id: string = randomUUID(),
+  timestamp: string = new Date().toISOString(),
+): MemoryEvent {
+  if (!inventory.evis[targetEvi]) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown evi: ${targetEvi} (known: ${known})`);
+  }
+  if (!values.text) throw new Error("send requires --text <text>");
+  return {
+    id,
+    timestamp,
+    type: "task",
+    source: values.source ?? "user",
+    target_evi: targetEvi,
+    subject: values.subject ?? "",
+    verdict: "queued",
+    confidence: 1,
+    text: values.text,
+  };
+}
+
 export function appendMemoryEvent(eventLog: string, event: MemoryEvent): string {
   const path = concretePath(eventLog);
   mkdirSync(dirname(path), { recursive: true });
@@ -896,6 +929,19 @@ export function promoteMemoryEvents(eventLog: string, compiledNotes: string, lim
   const notePath = join(notesDir, "feedback.md");
   writeFileSync(notePath, compileMemoryNotes(events, limit));
   return { eventCount: Math.min(events.length, limit), notePath };
+}
+
+function dispatchTask(evi: Evi, text: string, queueOnly: boolean): { delivered: boolean; method: string; detail: string } {
+  if (queueOnly) return { delivered: false, method: "queue", detail: "queue-only" };
+  if (!evi.sessionId) return { delivered: false, method: "queue", detail: "missing-session" };
+  if (!tmuxExists(evi.sessionId)) return { delivered: false, method: "tmux", detail: "session-missing" };
+  const result = run(["tmux", "send-keys", "-t", evi.sessionId, text, "Enter"]);
+  if (result.code !== 0) return { delivered: false, method: "tmux", detail: result.stderr.trim() || "send-failed" };
+  return { delivered: true, method: "tmux", detail: evi.sessionId };
+}
+
+export function queueTaskEvent(inventory: Inventory, targetEvi: string, text: string, values: { subject?: string; source?: string } = {}): MemoryEvent {
+  return createTaskEvent(inventory, targetEvi, { ...values, text });
 }
 
 function printDiscovery(discovery: Discovery): void {
@@ -1048,6 +1094,31 @@ function cmdSync(args: string[]): number {
   return 0;
 }
 
+function cmdSend(args: string[]): number {
+  const targetEvi = required(args[0], "send requires a target evi");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const evi = inventory.evis[targetEvi];
+  if (!evi) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown evi: ${targetEvi} (known: ${known})`);
+  }
+  const text = optionValue(args, "--text") ?? "";
+  const event = createTaskEvent(inventory, targetEvi, {
+    text,
+    subject: optionValue(args, "--subject"),
+    source: optionValue(args, "--source"),
+  });
+  if (hasFlag(args, "--dry-run")) {
+    console.log(`dry_run=send target=${targetEvi} method=${evi.sessionId ? "tmux" : "queue"} text=${compactText(text)}`);
+    return 0;
+  }
+  const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
+  const result = dispatchTask(evi, text, hasFlag(args, "--queue-only"));
+  console.log(`event=${event.id} type=${event.type} target=${event.target_evi} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`);
+  return result.method === "tmux" && !result.delivered && result.detail !== "session-missing" ? 1 : 0;
+}
+
 function cmdFeedback(args: string[]): number {
   const targetEvi = required(args[0], "feedback requires a target evi");
   const path = optionValue(args, "--config") ?? configPath();
@@ -1183,6 +1254,7 @@ Commands:
   memory status
   memory promote [--limit <n>]
   sync [--limit <n>]
+  send <evi> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
   feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);
@@ -1203,6 +1275,7 @@ export function main(argv = process.argv.slice(2)): number {
     use: cmdUse,
     doctor: () => cmdDoctor(),
     sync: cmdSync,
+    send: cmdSend,
     inspect: cmdInspect,
     feedback: cmdFeedback,
   };
