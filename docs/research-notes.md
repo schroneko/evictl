@@ -235,17 +235,18 @@ transcript copying. Each event stores a stable id, timestamp, source, target evi
 subject, verdict, confidence, and text. Later compilers can promote those events
 into notes, lessons, or policy files.
 
-`memory promote` and `sync` currently compile those JSONL feedback events into
-`feedback.md` under the configured compiled notes directory. This proves the
-event-to-notes path before adding runtime-native writers for Hermes, OpenClaw, or
-Claude Code Channels.
+`memory promote` compiles those JSONL feedback events into `feedback.md` under
+the configured compiled notes directory. `memory sync` imports provider-visible
+memory sources, writes `network.md`, and updates managed runtime-native memory
+sinks for Hermes Agent, OpenClaw, and Claude Code Channels.
 
 ## Evi inventory spawn notes
 
-`spawn` currently creates a new evi identity in `evictl` config with runtime,
-profile, agent id, session id, workspace, and state dir. It does not yet create a
-runtime-native process or agent session. That keeps identity and routing safe
-before adapter-specific creation is added.
+`spawn` and `evi add` create a new evi identity in `evictl` config with provider,
+runtime, profile, agent id, session id, workspace, state dir, network id, and
+replica metadata. `evi start` and `evi stop` operate the configured provider
+target for an evi. Fresh runtime-native profile creation remains
+provider-specific and is not inferred without explicit adapter commands.
 
 ## Task send notes
 
@@ -263,11 +264,14 @@ is useful for testing and for evi entries that are not live yet.
 - `evictl doctor`
 - `evictl spawn`
 - `evictl stop`
+- `evictl tail`
 - `evictl route list`
 - `evictl route set`
 - `evictl send`
 - `evictl sync`
 - `evictl memory search`
+- `evictl memory export`
+- `evictl memory import`
 - `evictl memory promote`
 - `evictl feedback`
 - `evictl inspect`
@@ -279,8 +283,8 @@ The first useful `evictl` should be a local control plane that can:
 1. inventory OpenClaw, Hermes Agent, and Claude Code Channels instances
 2. show which Telegram or chat surfaces are owned by which evi
 3. prevent accidental duplicate ownership of the same channel/account/session
-4. spawn isolated evi sessions where the runtime supports it
+4. create isolated evi inventory entries and operate their provider targets
 5. send tasks to one or more evi instances
-6. collect outputs and feedback into a shared event log
+6. collect runtime tails and feedback into a shared event log
 7. compile event logs into curated memory notes
 8. push curated notes back into runtime-native memory stores

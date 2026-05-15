@@ -85,24 +85,24 @@ evictl status
 evictl doctor
 evictl evi add
 evictl evi clone
+evictl evi start
+evictl evi stop
 evictl spawn
 evictl monitor
 evictl stop
+evictl tail
 evictl route list
 evictl route set
 evictl memory status
 evictl memory promote
+evictl memory search
+evictl memory export
+evictl memory import
 evictl memory sync
 evictl sync
 evictl send
 evictl feedback
 evictl inspect
-```
-
-Planned next commands:
-
-```bash
-evictl memory search
 ```
 
 ## Configuration
@@ -139,10 +139,11 @@ evictl evi add --provider openclaw --id evi-openclaw-research --profile research
 
 `spawn <provider>` remains as a compatibility alias for `evi add`. `evi clone`
 creates a new replica entry from an existing evi and records `replica_of`.
-Provider-specific runtime creation is still adapter work: the inventory now
-knows the replica, provider, network, workspace, state dir, agent id, and
-session id, but each provider still needs a concrete create/start adapter for
-fresh profiles and sessions.
+`evi start` and `evi stop` operate the configured provider target for an evi.
+Fresh runtime-native profile creation is still intentionally adapter-specific:
+the inventory records the desired replica, provider, network, workspace,
+state dir, agent id, and session id, but does not invent provider-specific setup
+commands.
 
 The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
 OpenClaw. Running runtimes are imported as `primary` routes; stopped runtimes are
@@ -166,6 +167,9 @@ Promote and sync memory:
 
 ```bash
 evictl memory promote
+evictl memory search ownership
+evictl memory export
+evictl memory import
 evictl memory sync
 evictl sync
 ```
@@ -173,12 +177,18 @@ evictl sync
 `memory promote` compiles feedback events from the JSONL event log into
 `compiled_notes/feedback.md`.
 
+`memory search` searches the JSONL event log and compiled memory notes. Use
+`--json` for machine-readable results.
+
+`memory export` prints the compiled network memory to stdout. `memory import`
+is an alias for `memory sync`.
+
 `memory sync` builds `compiled_notes/network.md` from provider memory sources and
 writes a managed `evictl:network-memory` section back into provider-visible
 sinks:
 
 - Hermes Agent: `<state_dir>/memories/MEMORY.md` and `<state_dir>/memories/USER.md` are sources; `<state_dir>/memories/MEMORY.md` is the managed sink.
-- OpenClaw: `<workspace>/MEMORY.md`, `<workspace>/USER.md`, and `<workspace>/DREAMS.md` are sources; `<workspace>/MEMORY.md` is the managed sink.
+- OpenClaw: `<workspace>/MEMORY.md`, `<workspace>/USER.md`, `<workspace>/IDENTITY.md`, `<workspace>/SOUL.md`, `<workspace>/DREAMS.md`, `<workspace>/dreams.md`, and Markdown files under `<workspace>/memory/` are sources; `<workspace>/MEMORY.md` is the managed sink.
 - Claude Code Channels: Claude Code reads `CLAUDE.md` files and the configured appended prompt. `evictl` writes `<state_dir>/evictl-network-memory.md` and also updates an existing generated prompt file when present.
 
 `sync` runs both event promotion and network memory sync.
@@ -192,6 +202,15 @@ evictl monitor --interval 60
 
 `monitor` checks all configured targets, starts stopped targets through their
 launchd plist when possible, and runs network memory sync after each pass.
+
+Read recent runtime output:
+
+```bash
+evictl tail ccc
+evictl tail evi-ccc-telegram --lines 120
+```
+
+`tail` reads recent tmux pane output for a configured target or evi.
 
 Send a task:
 

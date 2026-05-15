@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -72,6 +73,17 @@ export type MemoryEvent = {
   subject: string;
   verdict: string;
   confidence: number;
+  text: string;
+};
+
+export type MemorySearchResult = {
+  kind: string;
+  path: string;
+  line: number;
+  targetEvi: string;
+  timestamp: string;
+  subject: string;
+  verdict: string;
   text: string;
 };
 
@@ -140,6 +152,7 @@ const VALUE_OPTIONS = new Set([
   "--confidence",
   "--id",
   "--interval",
+  "--lines",
   "--limit",
   "--mode",
   "--network",
@@ -148,6 +161,7 @@ const VALUE_OPTIONS = new Set([
   "--peer-id",
   "--profile",
   "--provider",
+  "--query",
   "--replica-of",
   "--role",
   "--session",
@@ -868,8 +882,12 @@ function tmuxExists(session: string): boolean {
   return run(["tmux", "has-session", "-t", session]).code === 0;
 }
 
-function tmuxCapture(session: string): string {
-  const result = run(["tmux", "capture-pane", "-pt", session, "-S", "-80"]);
+export function tmuxCaptureCommand(session: string, lines = 80): string[] {
+  return ["tmux", "capture-pane", "-pt", session, "-S", `-${Math.max(1, lines)}`];
+}
+
+function tmuxCapture(session: string, lines = 80): string {
+  const result = run(tmuxCaptureCommand(session, lines));
   return result.code === 0 ? result.stdout : "";
 }
 
@@ -967,6 +985,23 @@ export function duplicatePrimaryRoutes(routes: Record<string, Route>): Map<strin
 
 function ownerLabel(key: string): string {
   return `(${key.split("\u0000").join(", ")})`;
+}
+
+export function resolveEviTarget(
+  inventory: Inventory,
+  eviId: string,
+): { evi: Evi; target: Target } {
+  const evi = inventory.evis[eviId];
+  if (!evi) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown evi: ${eviId} (known: ${known})`);
+  }
+  const target = inventory.targets[evi.runtime];
+  if (!target) {
+    const known = Object.keys(inventory.targets).sort().join(", ");
+    throw new Error(`unknown runtime for evi ${eviId}: ${evi.runtime} (known: ${known})`);
+  }
+  return { evi, target };
 }
 
 function displayPath(value: string): string {
@@ -1128,6 +1163,77 @@ function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function matchesQuery(value: string, query: string): boolean {
+  return value.toLowerCase().includes(query.toLowerCase());
+}
+
+function compiledNoteFiles(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const entries = readdirSync(dir)
+    .map((name) => join(dir, name))
+    .sort();
+  const files: string[] = [];
+  for (const entry of entries) {
+    const stat = statSync(entry);
+    if (stat.isDirectory()) files.push(...compiledNoteFiles(entry));
+    if (stat.isFile()) files.push(entry);
+  }
+  return files;
+}
+
+export function searchMemory(inventory: Inventory, query: string, limit = 20): MemorySearchResult[] {
+  if (!query.trim()) throw new Error("memory search requires a query");
+  const eventLog = concretePath(inventory.memoryEventLog);
+  const eventResults = readMemoryEvents(inventory.memoryEventLog)
+    .filter((event) =>
+      matchesQuery(
+        [
+          event.id,
+          event.timestamp,
+          event.type,
+          event.source,
+          event.target_evi,
+          event.subject,
+          event.verdict,
+          event.text,
+        ].join("\n"),
+        query,
+      ),
+    )
+    .map((event) => ({
+      kind: event.type,
+      path: eventLog,
+      line: 0,
+      targetEvi: event.target_evi,
+      timestamp: event.timestamp,
+      subject: event.subject,
+      verdict: event.verdict,
+      text: event.text,
+    }));
+  const noteResults = compiledNoteFiles(concretePath(inventory.memoryCompiledNotes)).flatMap(
+    (path) =>
+      readFileSync(path, "utf8")
+        .split("\n")
+        .flatMap((line, index) =>
+          matchesQuery(line, query)
+            ? [
+                {
+                  kind: "note",
+                  path,
+                  line: index + 1,
+                  targetEvi: "",
+                  timestamp: "",
+                  subject: "",
+                  verdict: "",
+                  text: line.trim(),
+                },
+              ]
+            : [],
+        ),
+  );
+  return [...eventResults, ...noteResults].slice(0, Math.max(1, limit));
+}
+
 export function compileMemoryNotes(events: MemoryEvent[], limit = 100): string {
   const selected = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp)).slice(-limit);
   const lines = ["# evictl Shared Memory", "", `Promoted events: ${selected.length}`, ""];
@@ -1178,6 +1284,28 @@ function readExistingFile(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
+function existingFiles(paths: string[]): string[] {
+  return paths.filter((path) => {
+    try {
+      return existsSync(path) && statSync(path).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function markdownFilesUnder(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === ".openclaw-repair") continue;
+    const entryPath = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...markdownFilesUnder(entryPath));
+    if (entry.isFile() && entry.name.endsWith(".md")) files.push(entryPath);
+  }
+  return files.sort();
+}
+
 function writeManagedBlock(path: string, block: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const previous = readExistingFile(path);
@@ -1217,9 +1345,15 @@ function providerMemorySources(evi: Evi): string[] {
   if (evi.provider === "openclaw") {
     if (!workspace) return [];
     return [
-      join(workspace, "MEMORY.md"),
-      join(workspace, "USER.md"),
-      join(workspace, "DREAMS.md"),
+      ...existingFiles([
+        join(workspace, "MEMORY.md"),
+        join(workspace, "USER.md"),
+        join(workspace, "IDENTITY.md"),
+        join(workspace, "SOUL.md"),
+        join(workspace, "DREAMS.md"),
+        join(workspace, "dreams.md"),
+      ]),
+      ...markdownFilesUnder(join(workspace, "memory")),
     ];
   }
   if (evi.provider === "claude-code-channels") {
@@ -1491,6 +1625,26 @@ function cmdEviClone(args: string[]): number {
   return 0;
 }
 
+function cmdEviStart(args: string[]): number {
+  const eviId = required(args[0], "evi start requires an evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const { target } = resolveEviTarget(inventory, eviId);
+  bootstrap(target);
+  printStatuses([statusFor(target)]);
+  return 0;
+}
+
+function cmdEviStop(args: string[]): number {
+  const eviId = required(args[0], "evi stop requires an evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const { target } = resolveEviTarget(inventory, eviId);
+  stopTarget(target);
+  printStatuses([statusFor(target)]);
+  return 0;
+}
+
 function cmdRouteList(): number {
   const inventory = loadInventory();
   const routes = Object.values(inventory.routes);
@@ -1563,6 +1717,48 @@ function cmdMemorySync(args: string[]): number {
   console.log(
     `sync=network sources=${result.sources} sinks=${result.sinks} notes=${result.networkPath}`,
   );
+  return 0;
+}
+
+function printMemorySearchResults(results: MemorySearchResult[]): void {
+  if (results.length === 0) {
+    console.log("no memory results");
+    return;
+  }
+  for (const result of results) {
+    const location = result.line > 0 ? `${result.path}:${result.line}` : result.path;
+    const target = result.targetEvi || "-";
+    const timestamp = result.timestamp || "-";
+    const subject = result.subject ? ` subject=${result.subject}` : "";
+    const verdict = result.verdict ? ` verdict=${result.verdict}` : "";
+    console.log(
+      `${result.kind} target=${target} timestamp=${timestamp}${subject}${verdict} path=${location} text=${compactText(result.text)}`,
+    );
+  }
+}
+
+function cmdMemorySearch(args: string[]): number {
+  const query = optionValue(args, "--query") ?? args[0] ?? "";
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const results = searchMemory(inventory, query, numberOption(args, "--limit", 20));
+  if (hasFlag(args, "--json")) {
+    console.log(JSON.stringify(results, null, 2));
+  } else {
+    printMemorySearchResults(results);
+  }
+  return results.length > 0 ? 0 : 1;
+}
+
+function cmdMemoryExport(args: string[]): number {
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const memory = compileNetworkMemory(inventory);
+  if (hasFlag(args, "--json")) {
+    console.log(JSON.stringify({ memory }, null, 2));
+  } else {
+    process.stdout.write(memory);
+  }
   return 0;
 }
 
@@ -1677,6 +1873,31 @@ function cmdTargets(): number {
   return 0;
 }
 
+function tailSessionsFor(subject: string, inventory: Inventory): string[] {
+  const evi = inventory.evis[subject];
+  if (evi) {
+    if (evi.sessionId) return [evi.sessionId];
+    return inventory.targets[evi.runtime]?.tmuxSessions ?? [];
+  }
+  const target = inventory.targets[resolveTarget(subject, inventory.targets)];
+  return target.tmuxSessions;
+}
+
+function cmdTail(args: string[]): number {
+  const subject = required(args[0], "tail requires a target or evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const lines = numberOption(args, "--lines", 80);
+  const sessions = tailSessionsFor(subject, inventory);
+  if (sessions.length === 0) throw new Error(`no tmux sessions configured for ${subject}`);
+  for (const session of sessions) {
+    if (sessions.length > 1) console.log(`==> ${session} <==`);
+    const output = tmuxCapture(session, lines).trimEnd();
+    if (output) console.log(output);
+  }
+  return 0;
+}
+
 function cmdStart(args: string[]): number {
   const targets = loadTargets();
   const key = resolveTarget(required(args[0], "start requires a target"), targets);
@@ -1786,17 +2007,23 @@ Commands:
   targets
   evi add --provider <provider> [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--network <id>] [--force]
   evi clone <source-evi> [--provider <provider>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--force]
+  evi start <evi>
+  evi stop <evi>
   spawn <provider> [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--force]
   start <target>
   stop <target>
   stop-all
   use <target>
   monitor [--once] [--interval <seconds>]
+  tail <target-or-evi> [--lines <n>]
   doctor
   route list
   route set <key> --target <evi> [--channel <channel>] [--account <id>] [--peer <id>] [--mode <mode>] [--force]
   memory status
   memory promote [--limit <n>]
+  memory search <query> [--limit <n>] [--json]
+  memory export [--json]
+  memory import
   memory sync
   sync [--limit <n>]
   send <evi> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
@@ -1819,6 +2046,7 @@ export function main(argv = process.argv.slice(2)): number {
     "stop-all": () => cmdStopAll(),
     use: cmdUse,
     monitor: cmdMonitor,
+    tail: cmdTail,
     doctor: () => cmdDoctor(),
     sync: cmdSync,
     send: cmdSend,
@@ -1833,8 +2061,13 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
   if (command === "evi" && args[0] === "add") return cmdEviAdd(args.slice(1));
   if (command === "evi" && args[0] === "clone") return cmdEviClone(args.slice(1));
+  if (command === "evi" && args[0] === "start") return cmdEviStart(args.slice(1));
+  if (command === "evi" && args[0] === "stop") return cmdEviStop(args.slice(1));
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();
   if (command === "memory" && args[0] === "promote") return cmdMemoryPromote(args.slice(1));
+  if (command === "memory" && args[0] === "search") return cmdMemorySearch(args.slice(1));
+  if (command === "memory" && args[0] === "export") return cmdMemoryExport(args.slice(1));
+  if (command === "memory" && args[0] === "import") return cmdMemorySync(args.slice(1));
   if (command === "memory" && args[0] === "sync") return cmdMemorySync(args.slice(1));
   const handler = commands[command];
   if (!handler) throw new Error(`unknown command: ${command}`);

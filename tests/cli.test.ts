@@ -22,11 +22,14 @@ import {
   promoteMemoryEvents,
   queueTaskEvent,
   readMemoryEvents,
+  resolveEviTarget,
   resolveProvider,
   resolveTarget,
+  searchMemory,
   setRouteConfig,
   spawnEviConfig,
   syncNetworkMemory,
+  tmuxCaptureCommand,
   tmuxSendCommands,
 } from "../src/cli.ts";
 
@@ -184,6 +187,20 @@ describe("inventory", () => {
     };
     expect(() => spawnEviConfig(data, evi)).toThrow("evi already exists");
     expect(spawnEviConfig(data, evi, true).evis).toBeTruthy();
+  });
+
+  test("resolves an evi to its provider target", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-a": {
+          runtime: "ccc",
+          provider: "claude-code-channels",
+        },
+      },
+    });
+    const resolved = resolveEviTarget(inventory, "evi-a");
+    expect(resolved.evi.eviId).toBe("evi-a");
+    expect(resolved.target.name).toBe("ccc");
   });
 });
 
@@ -388,9 +405,11 @@ describe("memory events", () => {
       const openclawWorkspace = join(root, "openclaw");
       mkdirSync(join(hermesState, "memories"), { recursive: true });
       mkdirSync(cccState, { recursive: true });
-      mkdirSync(openclawWorkspace, { recursive: true });
+      mkdirSync(join(openclawWorkspace, "memory"), { recursive: true });
       writeFileSync(join(hermesState, "memories", "MEMORY.md"), "Hermes durable fact\n");
       writeFileSync(join(openclawWorkspace, "MEMORY.md"), "OpenClaw durable fact\n");
+      writeFileSync(join(openclawWorkspace, "USER.md"), "OpenClaw user profile\n");
+      writeFileSync(join(openclawWorkspace, "memory", "2026-05-15.md"), "OpenClaw daily note\n");
       writeFileSync(join(cccState, "evictl-network-memory.md"), "Claude channel fact\n");
 
       const inventory = loadInventory({
@@ -421,8 +440,10 @@ describe("memory events", () => {
       const compiled = compileNetworkMemory(inventory);
       expect(compiled).toContain("Hermes durable fact");
       expect(compiled).toContain("OpenClaw durable fact");
+      expect(compiled).toContain("OpenClaw user profile");
+      expect(compiled).toContain("OpenClaw daily note");
       const result = syncNetworkMemory(inventory);
-      expect(result.sources).toBe(3);
+      expect(result.sources).toBe(5);
       expect(result.sinks).toBe(3);
       expect(readFileSync(join(root, "compiled", "network.md"), "utf8")).toContain(
         "evictl Replicated Evi Memory",
@@ -436,6 +457,39 @@ describe("memory events", () => {
       expect(readFileSync(join(cccState, "evictl-network-memory.md"), "utf8")).toContain(
         "evictl:network-memory begin",
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("searches events and compiled notes", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-memory-search-test-"));
+    try {
+      const eventLog = join(root, "events.jsonl");
+      const compiledNotes = join(root, "memory");
+      mkdirSync(compiledNotes, { recursive: true });
+      appendMemoryEvent(eventLog, {
+        id: "event-1",
+        timestamp: "2026-05-13T00:00:00.000Z",
+        type: "feedback",
+        source: "user",
+        target_evi: "evi-a",
+        subject: "handoff",
+        verdict: "remember",
+        confidence: 1,
+        text: "Prefer explicit route ownership.",
+      });
+      writeFileSync(join(compiledNotes, "feedback.md"), "A compiled route ownership note\n");
+      const inventory = loadInventory({
+        memory: {
+          event_log: eventLog,
+          compiled_notes: compiledNotes,
+        },
+      });
+      const results = searchMemory(inventory, "ownership");
+      expect(results.map((result) => result.kind)).toEqual(["feedback", "note"]);
+      expect(results[0].targetEvi).toBe("evi-a");
+      expect(results[1].line).toBe(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -467,6 +521,17 @@ describe("tmux send", () => {
     expect(literal).toContain("-l");
     expect(literal).toContain("--");
     expect(literal[literal.length - 1]).toBe("Enter PageDown -l");
+  });
+
+  test("builds bounded capture commands", () => {
+    expect(tmuxCaptureCommand("evi-session", 25)).toEqual([
+      "tmux",
+      "capture-pane",
+      "-pt",
+      "evi-session",
+      "-S",
+      "-25",
+    ]);
   });
 });
 

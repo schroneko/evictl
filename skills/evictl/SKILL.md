@@ -50,12 +50,14 @@ evictl status
 evictl doctor
 evictl route list
 evictl memory status
+evictl memory search <query>
+evictl tail <target-or-evi>
 ```
 
 ## Safety rules
 
-- Treat `start`, `stop`, `stop-all`, `use`, `route set --force`, and non-queued
-  `send` as runtime-affecting commands.
+- Treat `start`, `stop`, `stop-all`, `use`, `evi start`, `evi stop`,
+  `route set --force`, and non-queued `send` as runtime-affecting commands.
 - Use `--dry-run`, `--json`, or `--queue-only` when validating behavior without
   changing active agent sessions.
 - Do not store API keys, Telegram bot tokens, private prompts, or chat ids in
