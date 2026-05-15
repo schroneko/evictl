@@ -114,7 +114,53 @@ type RunResult = {
   stderr: string;
 };
 
-type Command = (args: string[]) => number;
+export type GlobalOptions = {
+  headless: boolean;
+};
+
+export type ParsedCliArgs = {
+  command: string | undefined;
+  args: string[];
+  options: GlobalOptions;
+};
+
+type Command = (args: string[], options: GlobalOptions) => number;
+
+const DEFAULT_GLOBAL_OPTIONS: GlobalOptions = {
+  headless: false,
+};
+
+const VALUE_OPTIONS = new Set([
+  "--account",
+  "--account-id",
+  "--agent",
+  "--agent-id",
+  "--channel",
+  "--config",
+  "--confidence",
+  "--id",
+  "--interval",
+  "--limit",
+  "--mode",
+  "--network",
+  "--network-id",
+  "--peer",
+  "--peer-id",
+  "--profile",
+  "--provider",
+  "--replica-of",
+  "--role",
+  "--session",
+  "--session-id",
+  "--source",
+  "--state-dir",
+  "--subject",
+  "--target",
+  "--target-evi",
+  "--text",
+  "--verdict",
+  "--workspace",
+]);
 
 export const DEFAULT_TARGETS: Record<string, Target> = {
   openclaw: {
@@ -949,6 +995,37 @@ function numberOption(args: string[], name: string, fallback: number): number {
   return value;
 }
 
+export function parseGlobalOptions(argv: string[]): ParsedCliArgs {
+  const args: string[] = [];
+  const options = { ...DEFAULT_GLOBAL_OPTIONS };
+  let previousRequiresValue = false;
+  let afterDoubleDash = false;
+  for (const arg of argv) {
+    if (afterDoubleDash) {
+      args.push(arg);
+      continue;
+    }
+    if (previousRequiresValue) {
+      args.push(arg);
+      previousRequiresValue = false;
+      continue;
+    }
+    if (arg === "--") {
+      args.push(arg);
+      afterDoubleDash = true;
+      continue;
+    }
+    if (arg === "--headless") {
+      options.headless = true;
+      continue;
+    }
+    args.push(arg);
+    previousRequiresValue = VALUE_OPTIONS.has(arg);
+  }
+  const [command, ...commandArgs] = args;
+  return { command, args: commandArgs, options };
+}
+
 export function createFeedbackEvent(
   inventory: Inventory,
   targetEvi: string,
@@ -1644,8 +1721,9 @@ function ensureTargets(targets: Record<string, Target>): TargetStatus[] {
   return nextStatuses;
 }
 
-function cmdMonitor(args: string[]): number {
+function cmdMonitor(args: string[], options: GlobalOptions): number {
   const once = hasFlag(args, "--once");
+  if (options.headless && !once) throw new Error("monitor --headless requires --once");
   const interval = numberOption(args, "--interval", 60);
   const targets = loadTargets();
   const runOnce = () => {
@@ -1697,6 +1775,9 @@ function required(value: string | undefined, message: string): string {
 function printHelp(): void {
   console.log(`Usage: evictl <command>
 
+Global options:
+  --headless  Run without interactive UI or open-ended waits. Long-running commands must opt into a one-shot form.
+
 Commands:
   ps
   discover [--json]
@@ -1725,7 +1806,7 @@ Commands:
 }
 
 export function main(argv = process.argv.slice(2)): number {
-  const [command, ...args] = argv;
+  const { command, args, options } = parseGlobalOptions(argv);
   const commands: Record<string, Command> = {
     ps: () => cmdPs(),
     discover: cmdDiscover,
@@ -1757,7 +1838,7 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "memory" && args[0] === "sync") return cmdMemorySync(args.slice(1));
   const handler = commands[command];
   if (!handler) throw new Error(`unknown command: ${command}`);
-  return handler(args);
+  return handler(args, options);
 }
 
 if (import.meta.main) {

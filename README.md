@@ -36,6 +36,21 @@ Run the CLI directly during development:
 bun run src/cli.ts ps
 ```
 
+## Headless operation
+
+`--headless` is a global flag for non-interactive automation:
+
+```bash
+evictl --headless status
+evictl status --headless
+evictl --headless monitor --once
+```
+
+Headless mode does not imply JSON output or automatic confirmation. It only
+removes interactive UI expectations and rejects commands that would wait
+indefinitely without an explicit one-shot form. Use command-specific `--json`
+flags where available.
+
 ## Installation
 
 `evictl` currently targets macOS and requires Bun because the published CLI entry

@@ -15,7 +15,9 @@ import {
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
   loadInventory,
+  main,
   mergeConfigData,
+  parseGlobalOptions,
   parseProcessPids,
   promoteMemoryEvents,
   queueTaskEvent,
@@ -69,6 +71,33 @@ describe("defaults", () => {
     for (const value of Object.values(ALIASES)) {
       expect(value in DEFAULT_TARGETS).toBe(true);
     }
+  });
+});
+
+describe("global options", () => {
+  test("parses headless before or after the command", () => {
+    expect(parseGlobalOptions(["--headless", "status"])).toEqual({
+      command: "status",
+      args: [],
+      options: { headless: true },
+    });
+    expect(parseGlobalOptions(["status", "--headless", "ccc"])).toEqual({
+      command: "status",
+      args: ["ccc"],
+      options: { headless: true },
+    });
+  });
+
+  test("does not consume option values that look like global flags", () => {
+    expect(parseGlobalOptions(["send", "evi-a", "--text", "--headless"])).toEqual({
+      command: "send",
+      args: ["evi-a", "--text", "--headless"],
+      options: { headless: false },
+    });
+  });
+
+  test("rejects open-ended monitor in headless mode", () => {
+    expect(() => main(["--headless", "monitor"])).toThrow("monitor --headless requires --once");
   });
 });
 
