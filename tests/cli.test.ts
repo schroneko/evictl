@@ -9,6 +9,7 @@ import {
   type Route,
   appendMemoryEvent,
   compileMemoryNotes,
+  compileNetworkMemory,
   createFeedbackEvent,
   createTaskEvent,
   discoverFromPlistRecords,
@@ -19,9 +20,11 @@ import {
   promoteMemoryEvents,
   queueTaskEvent,
   readMemoryEvents,
+  resolveProvider,
   resolveTarget,
   setRouteConfig,
   spawnEviConfig,
+  syncNetworkMemory,
   tmuxSendCommands,
 } from "../src/cli.ts";
 
@@ -46,6 +49,14 @@ describe("resolveTarget", () => {
 
   test("rejects unknown target", () => {
     expect(() => resolveTarget("missing", DEFAULT_TARGETS)).toThrow("unknown target");
+  });
+});
+
+describe("resolveProvider", () => {
+  test("resolves provider aliases", () => {
+    expect(resolveProvider("claude-code-channels")).toBe("claude-code-channels");
+    expect(resolveProvider("hermes")).toBe("hermes-agent");
+    expect(resolveProvider("open-claw")).toBe("openclaw");
   });
 });
 
@@ -105,15 +116,20 @@ describe("inventory", () => {
       {
         eviId: "evi-ccc-research",
         runtime: "ccc",
+        provider: "claude-code-channels",
         profile: "research",
         agentId: "research-agent",
         sessionId: "research-session",
         workspace: "/tmp/research",
         stateDir: "/tmp/research-state",
+        networkId: "replicated-evi",
+        replicaOf: "",
+        role: "replica",
       },
     );
     const inventory = loadInventory(next);
     expect(inventory.evis["evi-ccc-research"].profile).toBe("research");
+    expect(inventory.evis["evi-ccc-research"].provider).toBe("claude-code-channels");
   });
 
   test("spawn rejects duplicate evi ids unless forced", () => {
@@ -127,11 +143,15 @@ describe("inventory", () => {
     const evi = {
       eviId: "evi-ccc-research",
       runtime: "ccc",
+      provider: "claude-code-channels",
       profile: "research",
       agentId: "",
       sessionId: "",
       workspace: "",
       stateDir: "",
+      networkId: "replicated-evi",
+      replicaOf: "",
+      role: "replica",
     };
     expect(() => spawnEviConfig(data, evi)).toThrow("evi already exists");
     expect(spawnEviConfig(data, evi, true).evis).toBeTruthy();
@@ -329,6 +349,67 @@ describe("memory events", () => {
 
   test("compiles empty memory notes", () => {
     expect(compileMemoryNotes([])).toContain("No memory events promoted yet.");
+  });
+
+  test("syncs network memory into runtime-specific sinks", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-network-memory-test-"));
+    try {
+      const hermesState = join(root, "hermes");
+      const cccState = join(root, "ccc");
+      const openclawWorkspace = join(root, "openclaw");
+      mkdirSync(join(hermesState, "memories"), { recursive: true });
+      mkdirSync(cccState, { recursive: true });
+      mkdirSync(openclawWorkspace, { recursive: true });
+      writeFileSync(join(hermesState, "memories", "MEMORY.md"), "Hermes durable fact\n");
+      writeFileSync(join(openclawWorkspace, "MEMORY.md"), "OpenClaw durable fact\n");
+      writeFileSync(join(cccState, "evictl-network-memory.md"), "Claude channel fact\n");
+
+      const inventory = loadInventory({
+        memory: {
+          compiled_notes: join(root, "compiled"),
+        },
+        evis: {
+          "evi-hermes-a": {
+            runtime: "hermes",
+            provider: "hermes-agent",
+            state_dir: hermesState,
+            network_id: "replicated-evi",
+          },
+          "evi-openclaw-a": {
+            runtime: "openclaw",
+            provider: "openclaw",
+            workspace: openclawWorkspace,
+            network_id: "replicated-evi",
+          },
+          "evi-ccc-a": {
+            runtime: "ccc",
+            provider: "claude-code-channels",
+            state_dir: cccState,
+            network_id: "replicated-evi",
+          },
+        },
+      });
+      const compiled = compileNetworkMemory(inventory);
+      expect(compiled).toContain("Hermes durable fact");
+      expect(compiled).toContain("OpenClaw durable fact");
+      const result = syncNetworkMemory(inventory);
+      expect(result.sources).toBe(3);
+      expect(result.sinks).toBe(3);
+      expect(readFileSync(join(root, "compiled", "network.md"), "utf8")).toContain(
+        "evictl Replicated Evi Memory",
+      );
+      expect(readFileSync(join(hermesState, "memories", "MEMORY.md"), "utf8")).toContain(
+        "evictl:network-memory begin",
+      );
+      expect(readFileSync(join(openclawWorkspace, "MEMORY.md"), "utf8")).toContain(
+        "evictl:network-memory begin",
+      );
+      expect(readFileSync(join(cccState, "evictl-network-memory.md"), "utf8")).toContain(
+        "evictl:network-memory begin",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("ignores malformed memory event lines", () => {

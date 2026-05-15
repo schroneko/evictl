@@ -4,11 +4,20 @@
 that can run in parallel, receive work through messaging channels, and share
 distilled memory over time.
 
-The initial runtime adapters are:
+An evi is the always-on AI agent identity. Providers are the execution substrate
+that can host one or more evi replicas. When there is only one substrate, the
+provider and the evi can look identical, but `evictl` keeps the concepts
+separate so the network can clone and supervise replicas across substrates.
+
+The initial providers are:
 
 - OpenClaw
 - Hermes Agent
 - Claude Code Channels
+
+The intended shape is a replicated evi control plane: create replicas,
+route work to them, supervise their liveness, collect feedback and observations,
+then distribute distilled memory back to the replicas with provenance.
 
 Research notes: [docs/research-notes.md](docs/research-notes.md)
 
@@ -59,12 +68,16 @@ evictl discover
 evictl import
 evictl status
 evictl doctor
+evictl evi add
+evictl evi clone
 evictl spawn
+evictl monitor
 evictl stop
 evictl route list
 evictl route set
 evictl memory status
 evictl memory promote
+evictl memory sync
 evictl sync
 evictl send
 evictl feedback
@@ -104,11 +117,17 @@ evictl route set telegram:main --target evi-ccc-telegram --account default --mod
 Create another evi identity:
 
 ```bash
-evictl spawn ccc --id evi-ccc-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
+evictl evi add --provider claude-code-channels --id evi-ccc-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
+evictl evi add --provider hermes-agent --id evi-hermes-research --profile research --state-dir ~/.hermes/profiles/research
+evictl evi add --provider openclaw --id evi-openclaw-research --profile research --workspace ~/.openclaw/agents/research/agent
 ```
 
-`spawn` currently creates the isolated evi inventory entry. Runtime-specific
-process creation is still planned.
+`spawn <provider>` remains as a compatibility alias for `evi add`. `evi clone`
+creates a new replica entry from an existing evi and records `replica_of`.
+Provider-specific runtime creation is still adapter work: the inventory now
+knows the replica, provider, network, workspace, state dir, agent id, and
+session id, but each provider still needs a concrete create/start adapter for
+fresh profiles and sessions.
 
 The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
 OpenClaw. Running runtimes are imported as `primary` routes; stopped runtimes are
@@ -132,12 +151,32 @@ Promote and sync memory:
 
 ```bash
 evictl memory promote
+evictl memory sync
 evictl sync
 ```
 
-Both commands compile feedback events from the JSONL event log into
-`compiled_notes/feedback.md`. Runtime-native memory writers are still planned,
-but the event-to-notes pipeline is available now.
+`memory promote` compiles feedback events from the JSONL event log into
+`compiled_notes/feedback.md`.
+
+`memory sync` builds `compiled_notes/network.md` from provider memory sources and
+writes a managed `evictl:network-memory` section back into provider-visible
+sinks:
+
+- Hermes Agent: `<state_dir>/memories/MEMORY.md` and `<state_dir>/memories/USER.md` are sources; `<state_dir>/memories/MEMORY.md` is the managed sink.
+- OpenClaw: `<workspace>/MEMORY.md`, `<workspace>/USER.md`, and `<workspace>/DREAMS.md` are sources; `<workspace>/MEMORY.md` is the managed sink.
+- Claude Code Channels: Claude Code reads `CLAUDE.md` files and the configured appended prompt. `evictl` writes `<state_dir>/evictl-network-memory.md` and also updates an existing generated prompt file when present.
+
+`sync` runs both event promotion and network memory sync.
+
+Supervise configured providers:
+
+```bash
+evictl monitor --once
+evictl monitor --interval 60
+```
+
+`monitor` checks all configured targets, starts stopped targets through their
+launchd plist when possible, and runs network memory sync after each pass.
 
 Send a task:
 
