@@ -25,8 +25,10 @@ import {
   resolveEviTarget,
   resolveProvider,
   resolveTarget,
+  runtimeEnvForEvi,
   searchMemory,
   setRouteConfig,
+  setTargetConfig,
   spawnEviConfig,
   syncNetworkMemory,
   tmuxCaptureCommand,
@@ -157,11 +159,16 @@ describe("inventory", () => {
         networkId: "replicated-evi",
         replicaOf: "",
         role: "replica",
+        modelProvider: "xai-oauth",
+        model: "grok-4.3",
+        baseUrl: "",
+        env: {},
       },
     );
     const inventory = loadInventory(next);
     expect(inventory.evis["evi-ccc-research"].profile).toBe("research");
     expect(inventory.evis["evi-ccc-research"].provider).toBe("claude-code-channels");
+    expect(inventory.evis["evi-ccc-research"].modelProvider).toBe("xai-oauth");
   });
 
   test("spawn rejects duplicate evi ids unless forced", () => {
@@ -184,6 +191,10 @@ describe("inventory", () => {
       networkId: "replicated-evi",
       replicaOf: "",
       role: "replica",
+      modelProvider: "",
+      model: "",
+      baseUrl: "",
+      env: {},
     };
     expect(() => spawnEviConfig(data, evi)).toThrow("evi already exists");
     expect(spawnEviConfig(data, evi, true).evis).toBeTruthy();
@@ -201,6 +212,65 @@ describe("inventory", () => {
     const resolved = resolveEviTarget(inventory, "evi-a");
     expect(resolved.evi.eviId).toBe("evi-a");
     expect(resolved.target.name).toBe("ccc");
+  });
+
+  test("loads custom Hermes targets and runtime model settings", () => {
+    const inventory = loadInventory({
+      targets: {
+        "hermes-grok": {
+          provider: "hermes-agent",
+          process_patterns: ["hermes_cli.main.*grok"],
+        },
+      },
+      evis: {
+        "evi-hermes-grok": {
+          runtime: "hermes-grok",
+          provider: "hermes-agent",
+          profile: "grok",
+          model_provider: "grok",
+          model: "grok-4.3",
+          env: {
+            HERMES_HOME: "~/.hermes/profiles/grok",
+          },
+        },
+      },
+    });
+    const evi = inventory.evis["evi-hermes-grok"];
+    expect(evi.runtime).toBe("hermes-grok");
+    expect(evi.modelProvider).toBe("xai-oauth");
+    expect(runtimeEnvForEvi(evi)).toMatchObject({
+      HERMES_HOME: "~/.hermes/profiles/grok",
+      HERMES_INFERENCE_PROVIDER: "xai-oauth",
+      HERMES_INFERENCE_MODEL: "grok-4.3",
+      HERMES_MODEL: "grok-4.3",
+    });
+  });
+
+  test("adds custom provider targets", () => {
+    const next = setTargetConfig(
+      {},
+      {
+        name: "hermes-grok",
+        provider: "hermes-agent",
+        label: "ai.hermes.gateway-grok",
+        plist: "~/Library/LaunchAgents/ai.hermes.gateway-grok.plist",
+        tmuxSessions: ["hermes-grok"],
+        processPatterns: ["hermes_cli.main.*grok"],
+        healthPatterns: [],
+      },
+    );
+    const inventory = loadInventory(next);
+    expect(inventory.targets["hermes-grok"].provider).toBe("hermes-agent");
+    expect(inventory.evis["evi-hermes-grok"].provider).toBe("hermes-agent");
+    expect(() =>
+      setTargetConfig(next, {
+        name: "hermes-grok",
+        provider: "hermes-agent",
+        tmuxSessions: [],
+        processPatterns: [],
+        healthPatterns: [],
+      }),
+    ).toThrow("target already exists");
   });
 });
 

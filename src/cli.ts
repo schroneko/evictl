@@ -16,6 +16,7 @@ import { basename, dirname, join } from "node:path";
 
 export type Target = {
   name: string;
+  provider?: string;
   label?: string;
   plist?: string;
   tmuxSessions: string[];
@@ -45,6 +46,10 @@ export type Evi = {
   networkId: string;
   replicaOf: string;
   role: string;
+  modelProvider: string;
+  model: string;
+  baseUrl: string;
+  env: Record<string, string>;
 };
 
 export type Route = {
@@ -152,26 +157,36 @@ const VALUE_OPTIONS = new Set([
   "--confidence",
   "--id",
   "--interval",
+  "--health",
+  "--label",
   "--lines",
   "--limit",
   "--mode",
+  "--name",
   "--network",
   "--network-id",
   "--peer",
   "--peer-id",
   "--profile",
   "--provider",
+  "--process",
   "--query",
   "--replica-of",
   "--role",
+  "--runtime",
   "--session",
   "--session-id",
+  "--model",
+  "--model-provider",
+  "--base-url",
+  "--env",
   "--source",
   "--state-dir",
   "--subject",
   "--target",
   "--target-evi",
   "--text",
+  "--tmux",
   "--verdict",
   "--workspace",
 ]);
@@ -179,6 +194,7 @@ const VALUE_OPTIONS = new Set([
 export const DEFAULT_TARGETS: Record<string, Target> = {
   openclaw: {
     name: "openclaw",
+    provider: "openclaw",
     label: "ai.openclaw.gateway",
     plist: "~/Library/LaunchAgents/ai.openclaw.gateway.plist",
     tmuxSessions: [],
@@ -187,6 +203,7 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
   },
   hermes: {
     name: "hermes",
+    provider: "hermes-agent",
     label: "ai.hermes.gateway-nukoevi",
     plist: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
     tmuxSessions: ["hermes-line-tunnel"],
@@ -195,6 +212,7 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
   },
   ccc: {
     name: "ccc",
+    provider: "claude-code-channels",
     label: "com.local.claude-telegram-channel",
     plist: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
     tmuxSessions: ["claude-telegram-channel"],
@@ -228,6 +246,20 @@ export const PROVIDER_RUNTIMES: Record<string, string> = {
   openclaw: "openclaw",
 };
 
+export const HERMES_MODEL_PROVIDER_ALIASES: Record<string, string> = {
+  grok: "xai-oauth",
+  "grok-oauth": "xai-oauth",
+  "x-ai-oauth": "xai-oauth",
+  "xai-grok-oauth": "xai-oauth",
+  supergrok: "xai-oauth",
+  codex: "openai-codex",
+  "codex-oauth": "openai-codex",
+  llama: "custom",
+  llamacpp: "custom",
+  "llama.cpp": "custom",
+  "llama-cpp": "custom",
+};
+
 export function resolveProvider(value: string): string {
   const provider = PROVIDERS[value];
   if (!provider) {
@@ -237,12 +269,20 @@ export function resolveProvider(value: string): string {
   return provider;
 }
 
-function providerForRuntime(runtime: string): string {
+function providerForRuntime(runtime: string, targets?: Record<string, Target>): string {
+  const targetProvider = targets?.[runtime]?.provider;
+  if (targetProvider) return resolveProvider(targetProvider);
   return resolveProvider(runtime);
 }
 
 function runtimeForProvider(provider: string): string {
   return PROVIDER_RUNTIMES[resolveProvider(provider)];
+}
+
+export function normalizeHermesModelProvider(value: string): string {
+  const raw = value.trim();
+  if (!raw) return "";
+  return HERMES_MODEL_PROVIDER_ALIASES[raw.toLowerCase()] ?? raw;
 }
 
 export function run(command: string[]): RunResult {
@@ -317,6 +357,7 @@ export function loadTargets(data = loadConfigData()): Record<string, Target> {
     };
     targets[name] = {
       name,
+      provider: stringValue(raw.provider, base.provider ?? "") || undefined,
       label: stringValue(raw.label, base.label ?? "") || undefined,
       plist: stringValue(raw.plist, base.plist ?? "") || undefined,
       tmuxSessions: stringArray(raw.tmux_sessions ?? raw.tmuxSessions, base.tmuxSessions),
@@ -337,7 +378,7 @@ export function loadInventory(data = loadConfigData()): Inventory {
     evis[`evi-${name}`] = {
       eviId: `evi-${name}`,
       runtime: name,
-      provider: providerForRuntime(name),
+      provider: providerForRuntime(name, targets),
       profile: "default",
       agentId: "",
       sessionId: "",
@@ -346,6 +387,10 @@ export function loadInventory(data = loadConfigData()): Inventory {
       networkId: "default",
       replicaOf: "",
       role: "replica",
+      modelProvider: "",
+      model: "",
+      baseUrl: "",
+      env: {},
     };
   }
   const configuredEvis = objectValue(data.evis);
@@ -354,7 +399,7 @@ export function loadInventory(data = loadConfigData()): Inventory {
     const rawRuntime = stringValue(raw.runtime);
     const rawProvider = stringValue(raw.provider);
     if (!rawRuntime && !rawProvider) throw new Error(`evi missing runtime/provider: ${eviId}`);
-    const provider = rawProvider ? resolveProvider(rawProvider) : providerForRuntime(rawRuntime);
+    const provider = rawProvider ? resolveProvider(rawProvider) : providerForRuntime(rawRuntime, targets);
     const runtime = rawRuntime || runtimeForProvider(provider);
     if (!runtime) throw new Error(`evi missing runtime: ${eviId}`);
     evis[eviId] = {
@@ -369,6 +414,12 @@ export function loadInventory(data = loadConfigData()): Inventory {
       networkId: stringValue(raw.network_id ?? raw.networkId, "default"),
       replicaOf: stringValue(raw.replica_of ?? raw.replicaOf),
       role: stringValue(raw.role, "replica"),
+      modelProvider: normalizeHermesModelProvider(
+        stringValue(raw.model_provider ?? raw.modelProvider ?? raw.inference_provider),
+      ),
+      model: stringValue(raw.model ?? raw.inference_model),
+      baseUrl: stringValue(raw.base_url ?? raw.baseUrl),
+      env: stringMap(raw.env),
     };
   }
   const routes: Record<string, Route> = {};
@@ -464,6 +515,7 @@ function shellFlagValue(script: string, name: string): string {
 function targetWithPlist(runtime: string, data: Record<string, unknown>, path: string): Target {
   const base = DEFAULT_TARGETS[runtime] ?? {
     name: runtime,
+    provider: providerForRuntime(runtime),
     tmuxSessions: [],
     processPatterns: [runtime],
     healthPatterns: [],
@@ -499,6 +551,10 @@ function addHermesDiscovery(
     networkId: "default",
     replicaOf: "",
     role: "replica",
+    modelProvider: "",
+    model: "",
+    baseUrl: "",
+    env: {},
   };
   discovery.routes[`telegram:hermes:${slug(profile)}`] = {
     key: `telegram:hermes:${slug(profile)}`,
@@ -561,6 +617,10 @@ function addCccDiscovery(
     networkId: "default",
     replicaOf: "",
     role: "replica",
+    modelProvider: "",
+    model: "",
+    baseUrl: "",
+    env: {},
   };
   discovery.routes["telegram:ccc:default"] = {
     key: "telegram:ccc:default",
@@ -609,6 +669,10 @@ function addOpenClawDiscovery(
     networkId: "default",
     replicaOf: "",
     role: "replica",
+    modelProvider: "",
+    model: "",
+    baseUrl: "",
+    env: {},
   };
   discovery.routes[`telegram:openclaw:${slug(profile)}`] = {
     key: `telegram:openclaw:${slug(profile)}`,
@@ -705,11 +769,30 @@ export function discoverLocalSetup(): Discovery {
 
 function targetToConfig(target: Target): Record<string, unknown> {
   return {
+    provider: target.provider,
     label: target.label,
     plist: target.plist,
     tmux_sessions: target.tmuxSessions,
     process_patterns: target.processPatterns,
     health_patterns: target.healthPatterns,
+  };
+}
+
+export function setTargetConfig(
+  data: Record<string, unknown>,
+  target: Target,
+  force = false,
+): Record<string, unknown> {
+  const targets = objectValue(data.targets);
+  if (!force && targets[target.name]) {
+    throw new Error(`target already exists: ${target.name}`);
+  }
+  return {
+    ...data,
+    targets: {
+      ...targets,
+      [target.name]: targetToConfig(target),
+    },
   };
 }
 
@@ -725,6 +808,10 @@ function eviToConfig(evi: Evi): Record<string, unknown> {
     network_id: evi.networkId,
     replica_of: evi.replicaOf,
     role: evi.role,
+    model_provider: evi.modelProvider,
+    model: evi.model,
+    base_url: evi.baseUrl,
+    env: evi.env,
   };
 }
 
@@ -782,6 +869,10 @@ function eviConfig(evi: Evi): Record<string, unknown> {
     network_id: evi.networkId,
     replica_of: evi.replicaOf,
     role: evi.role,
+    model_provider: evi.modelProvider,
+    model: evi.model,
+    base_url: evi.baseUrl,
+    env: evi.env,
   };
 }
 
@@ -791,17 +882,18 @@ export function spawnEviConfig(
   force = false,
 ): Record<string, unknown> {
   const inventory = loadInventory(data);
+  const configuredEvis = objectValue(data.evis);
   if (!inventory.targets[evi.runtime]) {
     const known = Object.keys(inventory.targets).sort().join(", ");
     throw new Error(`unknown runtime: ${evi.runtime} (known: ${known})`);
   }
-  if (!force && inventory.evis[evi.eviId]) {
+  if (!force && configuredEvis[evi.eviId]) {
     throw new Error(`evi already exists: ${evi.eviId}`);
   }
   return {
     ...data,
     evis: {
-      ...objectValue(data.evis),
+      ...configuredEvis,
       [evi.eviId]: eviConfig(evi),
     },
   };
@@ -1022,12 +1114,47 @@ function optionValue(args: string[], name: string): string | undefined {
   return args[index + 1];
 }
 
+function optionValues(args: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && args[index + 1]) values.push(args[index + 1]);
+  }
+  return values;
+}
+
+function envFromArgs(args: string[], base: Record<string, string> = {}): Record<string, string> {
+  const env = { ...base };
+  for (const value of optionValues(args, "--env")) {
+    const separator = value.indexOf("=");
+    if (separator <= 0) throw new Error(`invalid --env value: ${value}`);
+    env[value.slice(0, separator)] = value.slice(separator + 1);
+  }
+  return env;
+}
+
 function numberOption(args: string[], name: string, fallback: number): number {
   const raw = optionValue(args, name);
   if (!raw) return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value)) throw new Error(`invalid number for ${name}: ${raw}`);
   return value;
+}
+
+export function runtimeEnvForEvi(evi: Evi): Record<string, string> {
+  const env = { ...evi.env };
+  if (evi.provider === "hermes-agent") {
+    if (evi.modelProvider) env.HERMES_INFERENCE_PROVIDER = evi.modelProvider;
+    if (evi.model) {
+      env.HERMES_MODEL = evi.model;
+      env.HERMES_INFERENCE_MODEL = evi.model;
+    }
+    if (evi.baseUrl && ["xai", "xai-oauth"].includes(evi.modelProvider)) {
+      env.XAI_BASE_URL = evi.baseUrl;
+    } else if (evi.baseUrl) {
+      env.OPENAI_BASE_URL = evi.baseUrl;
+    }
+  }
+  return env;
 }
 
 export function parseGlobalOptions(argv: string[]): ParsedCliArgs {
@@ -1479,8 +1606,10 @@ function printDiscovery(discovery: Discovery): void {
   console.log(`targets=${targets.length ? targets.join(",") : "-"}`);
   const evis = Object.values(discovery.evis).sort((a, b) => a.eviId.localeCompare(b.eviId));
   for (const evi of evis) {
+    const modelProvider = evi.modelProvider ? ` model_provider=${evi.modelProvider}` : "";
+    const model = evi.model ? ` model=${evi.model}` : "";
     console.log(
-      `evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`,
+      `evi=${evi.eviId} runtime=${evi.runtime} profile=${evi.profile}${modelProvider}${model} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`,
     );
   }
   const routes = Object.values(discovery.routes).sort((a, b) => a.key.localeCompare(b.key));
@@ -1545,8 +1674,10 @@ function cmdPs(): number {
     const routes = Object.values(inventory.routes).filter(
       (route) => route.targetEvi === evi.eviId,
     ).length;
+    const modelProvider = evi.modelProvider || "-";
+    const model = evi.model || "-";
     console.log(
-      `${evi.eviId.padEnd(width)}  provider=${evi.provider.padEnd(20)}  runtime=${evi.runtime.padEnd(8)}  profile=${evi.profile.padEnd(10)}  state=${state.padEnd(7)}  health=${health.padEnd(7)}  routes=${routes}`,
+      `${evi.eviId.padEnd(width)}  provider=${evi.provider.padEnd(20)}  runtime=${evi.runtime.padEnd(8)}  profile=${evi.profile.padEnd(10)}  model_provider=${modelProvider.padEnd(13)}  model=${model.padEnd(12)}  state=${state.padEnd(7)}  health=${health.padEnd(7)}  routes=${routes}`,
     );
   }
   return 0;
@@ -1562,10 +1693,14 @@ function addEviFromArgs(providerArg: string, args: string[]): number {
   const data = loadConfigData(path);
   const targets = loadTargets(data);
   const provider = resolveProvider(providerArg);
-  const runtime = resolveTarget(runtimeForProvider(provider), targets);
+  const runtime = resolveTarget(
+    optionValue(args, "--runtime") ?? optionValue(args, "--target") ?? runtimeForProvider(provider),
+    targets,
+  );
   const profile = optionValue(args, "--profile") ?? "default";
   const eviId =
     optionValue(args, "--id") ?? `evi-${slug(provider)}-${slug(profile)}`;
+  const modelProvider = normalizeHermesModelProvider(optionValue(args, "--model-provider") ?? "");
   const evi: Evi = {
     eviId,
     runtime,
@@ -1578,10 +1713,16 @@ function addEviFromArgs(providerArg: string, args: string[]): number {
     networkId: optionValue(args, "--network") ?? optionValue(args, "--network-id") ?? "default",
     replicaOf: optionValue(args, "--replica-of") ?? "",
     role: optionValue(args, "--role") ?? "replica",
+    modelProvider,
+    model: optionValue(args, "--model") ?? "",
+    baseUrl: optionValue(args, "--base-url") ?? "",
+    env: envFromArgs(args),
   };
   writeConfigData(path, spawnEviConfig(data, evi, hasFlag(args, "--force")));
+  const model = evi.model ? ` model=${evi.model}` : "";
+  const eviModelProvider = evi.modelProvider ? ` model_provider=${evi.modelProvider}` : "";
   console.log(
-    `evi=${evi.eviId} provider=${evi.provider} runtime=${evi.runtime} profile=${evi.profile} network=${evi.networkId} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`,
+    `evi=${evi.eviId} provider=${evi.provider} runtime=${evi.runtime} profile=${evi.profile} network=${evi.networkId}${eviModelProvider}${model} workspace=${displayPath(evi.workspace)} state_dir=${displayPath(evi.stateDir)}`,
   );
   return 0;
 }
@@ -1602,9 +1743,15 @@ function cmdEviClone(args: string[]): number {
     throw new Error(`unknown source evi: ${sourceId} (known: ${known})`);
   }
   const provider = optionValue(args, "--provider") ?? source.provider;
-  const runtime = runtimeForProvider(provider);
+  const runtime = resolveTarget(
+    optionValue(args, "--runtime") ?? optionValue(args, "--target") ?? runtimeForProvider(provider),
+    inventory.targets,
+  );
   const profile = optionValue(args, "--profile") ?? `${source.profile}-clone`;
   const eviId = optionValue(args, "--id") ?? `evi-${slug(provider)}-${slug(profile)}`;
+  const modelProvider = normalizeHermesModelProvider(
+    optionValue(args, "--model-provider") ?? source.modelProvider,
+  );
   const evi: Evi = {
     eviId,
     runtime,
@@ -1617,10 +1764,16 @@ function cmdEviClone(args: string[]): number {
     networkId: optionValue(args, "--network") ?? optionValue(args, "--network-id") ?? source.networkId,
     replicaOf: source.eviId,
     role: optionValue(args, "--role") ?? "replica",
+    modelProvider,
+    model: optionValue(args, "--model") ?? source.model,
+    baseUrl: optionValue(args, "--base-url") ?? source.baseUrl,
+    env: envFromArgs(args, source.env),
   };
   writeConfigData(path, spawnEviConfig(data, evi, hasFlag(args, "--force")));
+  const model = evi.model ? ` model=${evi.model}` : "";
+  const eviModelProvider = evi.modelProvider ? ` model_provider=${evi.modelProvider}` : "";
   console.log(
-    `evi=${evi.eviId} provider=${evi.provider} runtime=${evi.runtime} profile=${evi.profile} network=${evi.networkId} replica_of=${evi.replicaOf}`,
+    `evi=${evi.eviId} provider=${evi.provider} runtime=${evi.runtime} profile=${evi.profile} network=${evi.networkId}${eviModelProvider}${model} replica_of=${evi.replicaOf}`,
   );
   return 0;
 }
@@ -1828,7 +1981,8 @@ function cmdFeedback(args: string[]): number {
 }
 
 function cmdInspect(args: string[]): number {
-  const inventory = loadInventory();
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
   const eviId = args[0];
   if (!eviId) throw new Error("inspect requires an evi id");
   const evi = inventory.evis[eviId];
@@ -1843,10 +1997,18 @@ function cmdInspect(args: string[]): number {
   console.log(`network=${evi.networkId}`);
   console.log(`replica_of=${evi.replicaOf || "-"}`);
   console.log(`role=${evi.role || "-"}`);
+  console.log(`model_provider=${evi.modelProvider || "-"}`);
+  console.log(`model=${evi.model || "-"}`);
+  console.log(`base_url=${evi.baseUrl || "-"}`);
   console.log(`agent_id=${evi.agentId || "-"}`);
   console.log(`session_id=${evi.sessionId || "-"}`);
   console.log(`workspace=${displayPath(evi.workspace)}`);
   console.log(`state_dir=${displayPath(evi.stateDir)}`);
+  const env = runtimeEnvForEvi(evi);
+  console.log(`env=${Object.keys(env).length}`);
+  for (const [key, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
+    console.log(`- ${key}=${value}`);
+  }
   const routes = Object.values(inventory.routes).filter((route) => route.targetEvi === evi.eviId);
   console.log(`routes=${routes.length}`);
   for (const route of routes.sort((a, b) => a.key.localeCompare(b.key))) {
@@ -1868,8 +2030,45 @@ function cmdTargets(): number {
   const targets = loadTargets();
   for (const name of Object.keys(targets).sort()) {
     const target = targets[name];
-    console.log(`${name}\tlabel=${target.label ?? "-"}\tplist=${expandPath(target.plist) ?? "-"}`);
+    console.log(
+      `${name}\tprovider=${target.provider ?? "-"}\tlabel=${target.label ?? "-"}\tplist=${expandPath(target.plist) ?? "-"}`,
+    );
   }
+  return 0;
+}
+
+function cmdTargetAdd(args: string[]): number {
+  const name = optionValue(args, "--name") ?? args[0];
+  if (!name) throw new Error("target add requires a target name");
+  const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const provider = resolveProvider(optionValue(args, "--provider") ?? name);
+  const base = loadTargets(data)[name] ?? {
+    name,
+    provider,
+    tmuxSessions: [],
+    processPatterns: [],
+    healthPatterns: [],
+  };
+  const target: Target = {
+    name,
+    provider,
+    label: optionValue(args, "--label") ?? base.label,
+    plist: optionValue(args, "--plist") ?? base.plist,
+    tmuxSessions: optionValues(args, "--tmux").length
+      ? optionValues(args, "--tmux")
+      : base.tmuxSessions,
+    processPatterns: optionValues(args, "--process").length
+      ? optionValues(args, "--process")
+      : base.processPatterns,
+    healthPatterns: optionValues(args, "--health").length
+      ? optionValues(args, "--health")
+      : base.healthPatterns,
+  };
+  writeConfigData(path, setTargetConfig(data, target, hasFlag(args, "--force")));
+  console.log(
+    `target=${target.name} provider=${target.provider} label=${target.label ?? "-"} plist=${displayPath(target.plist ?? "")}`,
+  );
   return 0;
 }
 
@@ -2005,11 +2204,12 @@ Commands:
   import [--dry-run] [--json] [--config <path>]
   status [target]
   targets
-  evi add --provider <provider> [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--network <id>] [--force]
-  evi clone <source-evi> [--provider <provider>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--force]
+  target add <name> --provider <provider> [--label <launchd-label>] [--plist <path>] [--tmux <session>] [--process <regex>] [--health <text>] [--force]
+  evi add --provider <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--network <id>] [--force]
+  evi clone <source-evi> [--provider <provider>] [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   evi start <evi>
   evi stop <evi>
-  spawn <provider> [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--force]
+  spawn <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   start <target>
   stop <target>
   stop-all
@@ -2059,6 +2259,7 @@ export function main(argv = process.argv.slice(2)): number {
   }
   if (command === "route" && args[0] === "list") return cmdRouteList();
   if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
+  if (command === "target" && args[0] === "add") return cmdTargetAdd(args.slice(1));
   if (command === "evi" && args[0] === "add") return cmdEviAdd(args.slice(1));
   if (command === "evi" && args[0] === "clone") return cmdEviClone(args.slice(1));
   if (command === "evi" && args[0] === "start") return cmdEviStart(args.slice(1));
