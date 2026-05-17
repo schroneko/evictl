@@ -131,23 +131,14 @@ type RunResult = {
   stderr: string;
 };
 
-type RunOptions = {
-  cwd?: string;
-  env?: Record<string, string>;
-};
-
 type DispatchTaskOptions = {
   queueOnly: boolean;
-  toolsets?: string;
-  maxTurns?: string;
-  env?: Record<string, string>;
 };
 
 type DispatchTaskResult = {
   delivered: boolean;
   method: string;
   detail: string;
-  output: string;
 };
 
 export type GlobalOptions = {
@@ -205,11 +196,9 @@ const VALUE_OPTIONS = new Set([
   "--target",
   "--target-evi",
   "--text",
-  "--toolsets",
   "--tmux",
   "--verdict",
   "--workspace",
-  "--max-turns",
 ]);
 
 export const DEFAULT_TARGETS: Record<string, Target> = {
@@ -306,16 +295,12 @@ export function normalizeHermesModelProvider(value: string): string {
   return HERMES_MODEL_PROVIDER_ALIASES[raw.toLowerCase()] ?? raw;
 }
 
-export function run(command: string[], options: RunOptions = {}): RunResult {
-  const result = spawnSync(command[0], command.slice(1), {
-    encoding: "utf8",
-    cwd: options.cwd,
-    env: options.env ? { ...process.env, ...options.env } : process.env,
-  });
+export function run(command: string[]): RunResult {
+  const result = spawnSync(command[0], command.slice(1), { encoding: "utf8" });
   return {
     code: result.status ?? 1,
     stdout: result.stdout ?? "",
-    stderr: result.stderr ?? result.error?.message ?? "",
+    stderr: result.stderr ?? "",
   };
 }
 
@@ -1600,77 +1585,9 @@ export function tmuxSendCommands(sessionId: string, text: string): string[][] {
   ];
 }
 
-function hermesExecutable(evi: Evi): string {
-  const workspace = concretePath(evi.workspace);
-  const workspaceBinary = workspace ? join(workspace, "venv", "bin", "hermes") : "";
-  if (workspaceBinary && existsSync(workspaceBinary)) return workspaceBinary;
-  const defaultBinary = join(homedir(), ".hermes", "hermes-agent", "venv", "bin", "hermes");
-  if (existsSync(defaultBinary)) return defaultBinary;
-  return "hermes";
-}
-
-export function hermesCliCommand(
-  evi: Evi,
-  text: string,
-  options: Pick<DispatchTaskOptions, "toolsets" | "maxTurns"> = {},
-): string[] {
-  const command = [
-    hermesExecutable(evi),
-    "--profile",
-    evi.profile || "default",
-    "chat",
-    "-q",
-    text,
-    "-Q",
-    "--source",
-    "evictl",
-  ];
-  if (evi.modelProvider) command.push("--provider", evi.modelProvider);
-  if (evi.model) command.push("--model", evi.model);
-  if (options.toolsets) command.push("--toolsets", options.toolsets);
-  if (options.maxTurns) command.push("--max-turns", options.maxTurns);
-  return command;
-}
-
-function hermesCliEnv(evi: Evi): Record<string, string> {
-  const env = runtimeEnvForEvi(evi);
-  const stateDir = concretePath(evi.stateDir);
-  if (stateDir) env.HERMES_HOME = stateDir;
-  return env;
-}
-
-function extractHermesSessionId(output: string): string {
-  return output.match(/^session_id:\s*(\S+)/m)?.[1] ?? "";
-}
-
-function dispatchHermesCliTask(
-  evi: Evi,
-  text: string,
-  options: Pick<DispatchTaskOptions, "toolsets" | "maxTurns" | "env">,
-): DispatchTaskResult {
-  const result = run(hermesCliCommand(evi, text, options), {
-    cwd: concretePath(evi.workspace) || undefined,
-    env: { ...hermesCliEnv(evi), ...(options.env ?? {}) },
-  });
-  const output = result.stdout.trim();
-  if (result.code !== 0) {
-    const detail = result.stderr.trim() || compactText(output) || `exit:${result.code}`;
-    return { delivered: false, method: "hermes-cli", detail, output };
-  }
-  const sessionId = extractHermesSessionId(output);
-  return {
-    delivered: true,
-    method: "hermes-cli",
-    detail: sessionId ? `session:${sessionId}` : "completed",
-    output,
-  };
-}
-
-function dispatchMethodFor(evi: Evi, queueOnly = false): string {
+function dispatchMethodFor(queueOnly = false): string {
   if (queueOnly) return "queue";
-  if (evi.sessionId) return "tmux";
-  if (evi.provider === "hermes-agent") return "hermes-cli";
-  return "queue";
+  return "tmux";
 }
 
 function dispatchTask(
@@ -1679,13 +1596,11 @@ function dispatchTask(
   options: DispatchTaskOptions,
 ): DispatchTaskResult {
   if (options.queueOnly)
-    return { delivered: false, method: "queue", detail: "queue-only", output: "" };
-  if (!evi.sessionId && evi.provider === "hermes-agent")
-    return dispatchHermesCliTask(evi, text, options);
+    return { delivered: false, method: "queue", detail: "queue-only" };
   if (!evi.sessionId)
-    return { delivered: false, method: "queue", detail: "missing-session", output: "" };
+    return { delivered: false, method: "tmux", detail: "missing-session-id" };
   if (!tmuxExists(evi.sessionId))
-    return { delivered: false, method: "tmux", detail: "session-missing", output: "" };
+    return { delivered: false, method: "tmux", detail: "session-missing" };
   for (const command of tmuxSendCommands(evi.sessionId, text)) {
     const result = run(command);
     if (result.code !== 0)
@@ -1693,10 +1608,9 @@ function dispatchTask(
         delivered: false,
         method: "tmux",
         detail: result.stderr.trim() || "send-failed",
-        output: "",
       };
   }
-  return { delivered: true, method: "tmux", detail: evi.sessionId, output: "" };
+  return { delivered: true, method: "tmux", detail: evi.sessionId };
 }
 
 export function queueTaskEvent(
@@ -2054,26 +1968,18 @@ function cmdSend(args: string[]): number {
     source: optionValue(args, "--source"),
   });
   const queueOnly = hasFlag(args, "--queue-only");
-  const toolsets = optionValue(args, "--toolsets");
-  const maxTurns = optionValue(args, "--max-turns");
-  const env = envFromArgs(args);
   if (hasFlag(args, "--dry-run")) {
     console.log(
-      `dry_run=send target=${targetEvi} method=${dispatchMethodFor(evi, queueOnly)} text=${compactText(text)}`,
+      `dry_run=send target=${targetEvi} method=${dispatchMethodFor(queueOnly)} text=${compactText(text)}`,
     );
     return 0;
   }
   const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
-  const result = dispatchTask(evi, text, { queueOnly, toolsets, maxTurns, env });
+  const result = dispatchTask(evi, text, { queueOnly });
   console.log(
     `event=${event.id} type=${event.type} target=${event.target_evi} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`,
   );
-  if (result.output) {
-    process.stdout.write(`output<<EOF\n${result.output}\nEOF\n`);
-  }
-  if (result.method === "tmux" && !result.delivered && result.detail !== "session-missing") return 1;
-  if (result.method === "hermes-cli" && !result.delivered) return 1;
-  return 0;
+  return result.method === "tmux" && !result.delivered ? 1 : 0;
 }
 
 function cmdFeedback(args: string[]): number {
@@ -2340,7 +2246,7 @@ Commands:
   memory import
   memory sync
   sync [--limit <n>]
-  send <evi> --text <text> [--subject <id>] [--source <source>] [--toolsets <names>] [--max-turns <n>] [--env KEY=VALUE] [--queue-only] [--dry-run]
+  send <evi> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
   feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);

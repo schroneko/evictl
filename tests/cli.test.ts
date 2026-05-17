@@ -14,7 +14,6 @@ import {
   createTaskEvent,
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
-  hermesCliCommand,
   loadInventory,
   main,
   mergeConfigData,
@@ -625,43 +624,40 @@ describe("tmux send", () => {
     ]);
   });
 
-  test("builds Hermes CLI send commands with profile and tool options", () => {
-    const inventory = loadInventory({
-      evis: {
-        "evi-hermes-nukoevi": {
-          runtime: "hermes",
-          provider: "hermes-agent",
-          profile: "nukoevi",
-          workspace: "/tmp/hermes-agent",
-          state_dir: "/tmp/hermes-home",
-          model_provider: "grok",
-          model: "grok-4.3",
-        },
-      },
-    });
-    const command = hermesCliCommand(
-      inventory.evis["evi-hermes-nukoevi"],
-      "Search X",
-      { toolsets: "browser,web", maxTurns: "8" },
-    );
-    expect(command.slice(1)).toEqual([
-      "--profile",
-      "nukoevi",
-      "chat",
-      "-q",
-      "Search X",
-      "-Q",
-      "--source",
-      "evictl",
-      "--provider",
-      "xai-oauth",
-      "--model",
-      "grok-4.3",
-      "--toolsets",
-      "browser,web",
-      "--max-turns",
-      "8",
-    ]);
+  test("send requires a tmux session unless queue-only", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-send-tmux-test-"));
+    try {
+      const config = join(root, "config.json");
+      writeFileSync(
+        config,
+        JSON.stringify({
+          memory: {
+            event_log: join(root, "events.jsonl"),
+          },
+          evis: {
+            "evi-hermes-grok": {
+              runtime: "hermes",
+              provider: "hermes-agent",
+              profile: "grok",
+            },
+          },
+        }),
+      );
+      expect(main(["send", "evi-hermes-grok", "--text", "Search X", "--config", config])).toBe(1);
+      expect(
+        main([
+          "send",
+          "evi-hermes-grok",
+          "--text",
+          "Search X",
+          "--queue-only",
+          "--config",
+          config,
+        ]),
+      ).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
