@@ -118,6 +118,17 @@ export type SendResult = {
   detail: string;
 };
 
+export type ClaudeCodeChannelsLaunchPlan = {
+  identityId: string;
+  eviId: string;
+  channels: ClaudeCodeChannelPlugin[];
+  args: string[];
+  settings: {
+    channelsEnabled: true;
+    allowedChannelPlugins: ClaudeCodeChannelPlugin[];
+  };
+};
+
 export type DiscoverySource = {
   runtime: string;
   kind: string;
@@ -250,21 +261,26 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
     processPatterns: ["hermes_cli.main", "ai.hermes.gateway", "cloudflared.*\\.hermes"],
     healthPatterns: [],
   },
-  ccc: {
-    name: "ccc",
+  "claude-code-channels": {
+    name: "claude-code-channels",
     provider: "claude-code-channels",
     label: "com.local.claude-telegram-channel",
     plist: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
     tmuxSessions: ["claude-telegram-channel"],
-    processPatterns: ["claude.*plugin:telegram", "nukoevi-telegram", "claude-telegram-channel"],
+    processPatterns: [
+      "claude.*plugin:(telegram|discord|fakechat)",
+      "nukoevi-(telegram|discord)",
+      "claude-telegram-channel",
+    ],
     healthPatterns: ["Listening for channel messages from:"],
   },
 };
 
 export const ALIASES: Record<string, string> = {
-  claude: "ccc",
-  "claude-code-channels": "ccc",
-  channels: "ccc",
+  ccc: "claude-code-channels",
+  claude: "claude-code-channels",
+  "claude-code-channels": "claude-code-channels",
+  channels: "claude-code-channels",
   "hermes-agent": "hermes",
   "open-claw": "openclaw",
 };
@@ -281,7 +297,7 @@ export const PROVIDERS: Record<string, string> = {
 };
 
 export const PROVIDER_RUNTIMES: Record<string, string> = {
-  "claude-code-channels": "ccc",
+  "claude-code-channels": "claude-code-channels",
   "hermes-agent": "hermes",
   openclaw: "openclaw",
 };
@@ -388,15 +404,16 @@ export function loadTargets(data = loadConfigData()): Record<string, Target> {
   const targets = structuredClone(DEFAULT_TARGETS);
   const configuredTargets = objectValue(data.targets);
   for (const [name, rawTarget] of Object.entries(configuredTargets)) {
+    const targetName = ALIASES[name] ?? name;
     const raw = objectValue(rawTarget);
-    const base = targets[name] ?? {
-      name,
+    const base = targets[targetName] ?? {
+      name: targetName,
       tmuxSessions: [],
       processPatterns: [],
       healthPatterns: [],
     };
-    targets[name] = {
-      name,
+    targets[targetName] = {
+      name: targetName,
       provider: stringValue(raw.provider, base.provider ?? "") || undefined,
       label: stringValue(raw.label, base.label ?? "") || undefined,
       plist: stringValue(raw.plist, base.plist ?? "") || undefined,
@@ -409,6 +426,10 @@ export function loadTargets(data = loadConfigData()): Record<string, Target> {
     };
   }
   return targets;
+}
+
+function normalizeRuntimeName(runtime: string, targets: Record<string, Target>): string {
+  return resolveTarget(runtime, targets);
 }
 
 export function loadInventory(data = loadConfigData()): Inventory {
@@ -440,7 +461,7 @@ export function loadInventory(data = loadConfigData()): Inventory {
     const rawProvider = stringValue(raw.provider);
     if (!rawRuntime && !rawProvider) throw new Error(`evi missing runtime/provider: ${eviId}`);
     const provider = rawProvider ? resolveProvider(rawProvider) : providerForRuntime(rawRuntime, targets);
-    const runtime = rawRuntime || runtimeForProvider(provider);
+    const runtime = normalizeRuntimeName(rawRuntime || runtimeForProvider(provider), targets);
     if (!runtime) throw new Error(`evi missing runtime: ${eviId}`);
     evis[eviId] = {
       eviId,
@@ -577,11 +598,13 @@ function profileFromArgs(args: string[]): string | undefined {
 }
 
 function routeMode(runningByRuntime: Record<string, boolean>, runtime: string): string {
-  return runningByRuntime[runtime] ? "primary" : "standby";
+  const legacyRuntime = runtime === "claude-code-channels" ? "ccc" : runtime;
+  return runningByRuntime[runtime] || runningByRuntime[legacyRuntime] ? "primary" : "standby";
 }
 
 function readTextIfExists(path: string): string {
-  return existsSync(path) ? readFileSync(path, "utf8") : "";
+  const concrete = expandPath(path) ?? path;
+  return existsSync(concrete) ? readFileSync(concrete, "utf8") : "";
 }
 
 function shellAssignedValue(script: string, name: string): string {
@@ -592,6 +615,88 @@ function shellAssignedValue(script: string, name: string): string {
 function shellFlagValue(script: string, name: string): string {
   const match = script.match(new RegExp(`${name}\\s+([^\\s"']+)`));
   return match?.[1] ?? "";
+}
+
+export type ClaudeCodeChannelPlugin = {
+  plugin: string;
+  marketplace: string;
+};
+
+export function claudeCodeChannelPluginsFromScript(script: string): ClaudeCodeChannelPlugin[] {
+  const plugins = new Map<string, ClaudeCodeChannelPlugin>();
+  const pattern = /plugin:([a-z0-9-]+)@([a-z0-9-]+)/gi;
+  for (const match of script.matchAll(pattern)) {
+    const plugin = match[1];
+    const marketplace = match[2];
+    plugins.set(`${plugin}@${marketplace}`, { plugin, marketplace });
+  }
+  return [...plugins.values()].sort((a, b) =>
+    `${a.plugin}@${a.marketplace}`.localeCompare(`${b.plugin}@${b.marketplace}`),
+  );
+}
+
+const CLAUDE_CODE_CHANNEL_MARKETPLACES: Record<string, string> = {
+  discord: "claude-plugins-official",
+  fakechat: "claude-plugins-official",
+  imessage: "claude-plugins-official",
+  telegram: "claude-plugins-official",
+};
+
+function claudeCodeChannelPluginForInterface(binding: InterfaceBinding): ClaudeCodeChannelPlugin | undefined {
+  const plugin = binding.kind || binding.key.split(":", 1)[0] || "";
+  const marketplace = CLAUDE_CODE_CHANNEL_MARKETPLACES[plugin];
+  return marketplace ? { plugin, marketplace } : undefined;
+}
+
+export function claudeCodeChannelsLaunchPlan(
+  inventory: Inventory,
+  identityId: string,
+): ClaudeCodeChannelsLaunchPlan {
+  const identity = inventory.identities[identityId];
+  if (!identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
+  const evi = inventory.evis[identity.activeEvi];
+  if (!evi) throw new Error(`identity has no active evi: ${identityId}`);
+  if (evi.provider !== "claude-code-channels") {
+    throw new Error(`identity ${identityId} active processor is not Claude Code Channels`);
+  }
+  const channelsByKey = new Map<string, ClaudeCodeChannelPlugin>();
+  for (const binding of Object.values(inventory.interfaces)) {
+    if (binding.identityId !== identityId) continue;
+    if (!["primary", "mirror"].includes(binding.mode)) continue;
+    const channel = claudeCodeChannelPluginForInterface(binding);
+    if (channel) channelsByKey.set(`${channel.plugin}@${channel.marketplace}`, channel);
+  }
+  const channels = [...channelsByKey.values()].sort((a, b) =>
+    `${a.plugin}@${a.marketplace}`.localeCompare(`${b.plugin}@${b.marketplace}`),
+  );
+  if (channels.length === 0) {
+    throw new Error(`identity ${identityId} has no Claude Code Channels-compatible interfaces`);
+  }
+  return {
+    identityId,
+    eviId: evi.eviId,
+    channels,
+    args: channels.flatMap((channel) => [
+      "--channels",
+      `plugin:${channel.plugin}@${channel.marketplace}`,
+    ]),
+    settings: {
+      channelsEnabled: true,
+      allowedChannelPlugins: channels,
+    },
+  };
+}
+
+function profileFromClaudeCodeChannels(agentName: string, plugins: ClaudeCodeChannelPlugin[]): string {
+  let profile = agentName || "default";
+  for (const plugin of plugins) {
+    const suffix = `-${plugin.plugin}`;
+    if (profile.endsWith(suffix)) profile = profile.slice(0, -suffix.length);
+  }
+  return profile || "default";
 }
 
 function targetWithPlist(runtime: string, data: Record<string, unknown>, path: string): Target {
@@ -672,26 +777,58 @@ function addHermesDiscovery(
   }
 }
 
-function addCccDiscovery(
+function setDiscoveredIdentity(
+  discovery: Discovery,
+  identityId: string,
+  activeEvi: string,
+  profile: string,
+  memoryScope: string,
+  preferred: boolean,
+): void {
+  const existing = discovery.identities[identityId];
+  if (existing && existing.activeEvi && !preferred) return;
+  discovery.identities[identityId] = {
+    identityId,
+    profile,
+    memoryScope,
+    activeEvi,
+    description: existing?.description ?? "",
+  };
+}
+
+function addClaudeCodeChannelsDiscovery(
   discovery: Discovery,
   record: PlistRecord,
   runningByRuntime: Record<string, boolean>,
 ): void {
   const args = plistArgs(record.data);
-  const startScript = args.find((arg) => arg.includes("claude-telegram-channel")) ?? "";
+  const startScript =
+    args.find(
+      (arg) =>
+        arg.includes("claude-telegram-channel") ||
+        arg.includes("claude-code-channels") ||
+        arg.endsWith("/start.sh"),
+    ) ?? "";
   const stateDir = startScript
     ? dirname(startScript)
     : join(homedir(), ".local", "share", "claude-telegram-channel");
   const script = startScript ? readTextIfExists(startScript) : "";
   const sessionName = shellAssignedValue(script, "session_name");
   const agentName = shellFlagValue(script, "--name");
-  const eviId = "evi-ccc-telegram";
-  discovery.targets.ccc = targetWithPlist("ccc", record.data, record.path);
+  const plugins = claudeCodeChannelPluginsFromScript(script);
+  const activePlugins = plugins.length
+    ? plugins
+    : [{ plugin: "telegram", marketplace: "claude-plugins-official" }];
+  const profile = profileFromClaudeCodeChannels(agentName, activePlugins);
+  const eviId = `evi-claude-code-channels-${slug(profile)}`;
+  const runtime = "claude-code-channels";
+  const mode = routeMode(runningByRuntime, runtime);
+  discovery.targets[runtime] = targetWithPlist(runtime, record.data, record.path);
   discovery.evis[eviId] = {
     eviId,
-    runtime: "ccc",
+    runtime,
     provider: "claude-code-channels",
-    profile: "telegram",
+    profile,
     agentId: agentName,
     sessionId: sessionName,
     workspace: plistWorkingDirectory(record.data) || shellAssignedValue(script, "workdir"),
@@ -704,27 +841,47 @@ function addCccDiscovery(
     baseUrl: "",
     env: {},
   };
-  discovery.routes["telegram:ccc:default"] = {
-    key: "telegram:ccc:default",
-    channel: "telegram",
-    accountId: "default",
-    peerId: "",
-    targetEvi: eviId,
-    mode: routeMode(runningByRuntime, "ccc"),
-  };
+  setDiscoveredIdentity(
+    discovery,
+    profile,
+    eviId,
+    profile,
+    profile,
+    mode === "primary",
+  );
+  for (const plugin of activePlugins) {
+    const interfaceKey = `${plugin.plugin}:main`;
+    discovery.interfaces[interfaceKey] = {
+      key: interfaceKey,
+      kind: plugin.plugin,
+      address: "main",
+      identityId: profile,
+      mode,
+    };
+    const routeKey = `${plugin.plugin}:claude-code-channels:${slug(profile)}`;
+    discovery.routes[routeKey] = {
+      key: routeKey,
+      channel: plugin.plugin,
+      accountId: "default",
+      peerId: "",
+      targetEvi: eviId,
+      mode,
+    };
+  }
   discovery.sources.push({
-    runtime: "ccc",
+    runtime,
     kind: "launchd",
     path: record.path,
     label: plistLabel(record.data),
-    status: routeMode(runningByRuntime, "ccc"),
+    status: mode,
   });
-  if (startScript && existsSync(startScript)) {
+  const concreteStartScript = expandPath(startScript) ?? startScript;
+  if (startScript && existsSync(concreteStartScript)) {
     discovery.sources.push({
-      runtime: "ccc",
+      runtime,
       kind: "start-script",
-      path: startScript,
-      label: agentName || "telegram",
+      path: concreteStartScript,
+      label: agentName || profile,
       status: sessionName || "found",
     });
   }
@@ -773,7 +930,9 @@ function addOpenClawDiscovery(
   });
 }
 
-function classifyPlist(record: PlistRecord): "hermes" | "ccc" | "openclaw" | undefined {
+function classifyPlist(
+  record: PlistRecord,
+): "hermes" | "claude-code-channels" | "openclaw" | undefined {
   const haystack = [
     record.path,
     plistLabel(record.data),
@@ -783,7 +942,7 @@ function classifyPlist(record: PlistRecord): "hermes" | "ccc" | "openclaw" | und
     .join("\n")
     .toLowerCase();
   if (haystack.includes("claude-telegram-channel") || haystack.includes("claude-code-channels"))
-    return "ccc";
+    return "claude-code-channels";
   if (
     haystack.includes("hermes_cli.main") ||
     haystack.includes("hermes-agent") ||
@@ -812,7 +971,8 @@ export function discoverFromPlistRecords(
   for (const record of records) {
     const runtime = classifyPlist(record);
     if (runtime === "hermes") addHermesDiscovery(discovery, record, runningByRuntime);
-    if (runtime === "ccc") addCccDiscovery(discovery, record, runningByRuntime);
+    if (runtime === "claude-code-channels")
+      addClaudeCodeChannelsDiscovery(discovery, record, runningByRuntime);
     if (runtime === "openclaw") addOpenClawDiscovery(discovery, record, runningByRuntime);
   }
   demoteDuplicatePrimaryRoutes(discovery);
@@ -865,15 +1025,17 @@ export function setTargetConfig(
   target: Target,
   force = false,
 ): Record<string, unknown> {
+  const targetName = ALIASES[target.name] ?? target.name;
+  const normalizedTarget = { ...target, name: targetName };
   const targets = objectValue(data.targets);
-  if (!force && targets[target.name]) {
-    throw new Error(`target already exists: ${target.name}`);
+  if (!force && targets[targetName]) {
+    throw new Error(`target already exists: ${targetName}`);
   }
   return {
     ...data,
     targets: {
       ...targets,
-      [target.name]: targetToConfig(target),
+      [targetName]: targetToConfig(normalizedTarget),
     },
   };
 }
@@ -903,6 +1065,21 @@ function identityToConfig(identity: Identity): Record<string, unknown> {
     memory_scope: identity.memoryScope,
     active_evi: identity.activeEvi,
     description: identity.description,
+  };
+}
+
+function mergeIdentityConfig(
+  existing: Record<string, unknown>,
+  discovered: Identity,
+): Record<string, unknown> {
+  const existingActive = stringValue(
+    existing.active_evi ?? existing.activeEvi ?? existing.active_processor ?? existing.activeProcessor,
+  );
+  return {
+    profile: stringValue(existing.profile, discovered.profile),
+    memory_scope: stringValue(existing.memory_scope ?? existing.memoryScope, discovered.memoryScope),
+    active_evi: existingActive || discovered.activeEvi,
+    description: stringValue(existing.description, discovered.description),
   };
 }
 
@@ -1052,19 +1229,21 @@ export function spawnEviConfig(
   force = false,
 ): Record<string, unknown> {
   const inventory = loadInventory(data);
+  const normalizedRuntime = normalizeRuntimeName(evi.runtime, inventory.targets);
+  const normalizedEvi = { ...evi, runtime: normalizedRuntime };
   const configuredEvis = objectValue(data.evis);
-  if (!inventory.targets[evi.runtime]) {
+  if (!inventory.targets[normalizedEvi.runtime]) {
     const known = Object.keys(inventory.targets).sort().join(", ");
     throw new Error(`unknown runtime: ${evi.runtime} (known: ${known})`);
   }
-  if (!force && configuredEvis[evi.eviId]) {
-    throw new Error(`evi already exists: ${evi.eviId}`);
+  if (!force && configuredEvis[normalizedEvi.eviId]) {
+    throw new Error(`evi already exists: ${normalizedEvi.eviId}`);
   }
   return {
     ...data,
     evis: {
       ...configuredEvis,
-      [evi.eviId]: eviConfig(evi),
+      [normalizedEvi.eviId]: eviConfig(normalizedEvi),
     },
   };
 }
@@ -1079,8 +1258,9 @@ export function mergeConfigData(
   const evis = { ...objectValue(existing.evis) };
   for (const [eviId, evi] of Object.entries(discovery.evis)) evis[eviId] = eviToConfig(evi);
   const identities = { ...objectValue(existing.identities) };
-  for (const [identityId, identity] of Object.entries(discovery.identities))
-    identities[identityId] = identityToConfig(identity);
+  for (const [identityId, identity] of Object.entries(discovery.identities)) {
+    identities[identityId] = mergeIdentityConfig(objectValue(identities[identityId]), identity);
+  }
   const interfaces = { ...objectValue(existing.interfaces) };
   for (const [key, binding] of Object.entries(discovery.interfaces))
     interfaces[key] = interfaceToConfig(binding);
@@ -2106,6 +2286,22 @@ function cmdProcessorBind(args: string[]): number {
   return 0;
 }
 
+function cmdProcessorLaunchPlan(args: string[]): number {
+  const identityId = required(args[0], "processor launch-plan requires an identity id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const plan = claudeCodeChannelsLaunchPlan(inventory, identityId);
+  if (hasFlag(args, "--json")) {
+    console.log(JSON.stringify(plan, null, 2));
+    return 0;
+  }
+  console.log(`identity=${plan.identityId} processor=${plan.eviId}`);
+  console.log(`channels=${plan.channels.map((channel) => channel.plugin).join(",")}`);
+  console.log(`args=${plan.args.join(" ")}`);
+  console.log(`settings=${JSON.stringify(plan.settings)}`);
+  return 0;
+}
+
 function cmdInterfaceList(): number {
   const inventory = loadInventory();
   const bindings = Object.values(inventory.interfaces);
@@ -2572,6 +2768,7 @@ Commands:
   processor list
   processor bind <identity> <evi>
   processor switch <identity> <evi>
+  processor launch-plan <identity> [--json]
   spawn <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   start <target>
   stop <target>
@@ -2637,6 +2834,8 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "processor" && args[0] === "list") return cmdProcessorList();
   if (command === "processor" && args[0] === "bind") return cmdProcessorBind(args.slice(1));
   if (command === "processor" && args[0] === "switch") return cmdProcessorBind(args.slice(1));
+  if (command === "processor" && args[0] === "launch-plan")
+    return cmdProcessorLaunchPlan(args.slice(1));
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();
   if (command === "memory" && args[0] === "promote") return cmdMemoryPromote(args.slice(1));
   if (command === "memory" && args[0] === "search") return cmdMemorySearch(args.slice(1));

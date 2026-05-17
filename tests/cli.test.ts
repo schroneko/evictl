@@ -11,6 +11,8 @@ import {
   type Route,
   appendMemoryEvent,
   bindIdentityProcessorConfig,
+  claudeCodeChannelPluginsFromScript,
+  claudeCodeChannelsLaunchPlan,
   compileMemoryNotes,
   compileNetworkMemory,
   createFeedbackEvent,
@@ -53,7 +55,8 @@ afterEach(() => {
 
 describe("resolveTarget", () => {
   test("resolves alias", () => {
-    expect(resolveTarget("claude-code-channels", DEFAULT_TARGETS)).toBe("ccc");
+    expect(resolveTarget("claude-code-channels", DEFAULT_TARGETS)).toBe("claude-code-channels");
+    expect(resolveTarget("ccc", DEFAULT_TARGETS)).toBe("claude-code-channels");
   });
 
   test("resolves direct target", () => {
@@ -75,7 +78,9 @@ describe("resolveProvider", () => {
 
 describe("defaults", () => {
   test("supported targets", () => {
-    expect(new Set(Object.keys(DEFAULT_TARGETS))).toEqual(new Set(["openclaw", "hermes", "ccc"]));
+    expect(new Set(Object.keys(DEFAULT_TARGETS))).toEqual(
+      new Set(["openclaw", "hermes", "claude-code-channels"]),
+    );
   });
 
   test("aliases do not shadow targets", () => {
@@ -119,7 +124,7 @@ describe("inventory", () => {
       process.env.XDG_CONFIG_HOME = root;
       const inventory = loadInventory();
       expect(new Set(Object.keys(inventory.evis))).toEqual(
-        new Set(["evi-openclaw", "evi-hermes", "evi-ccc"]),
+        new Set(["evi-openclaw", "evi-hermes", "evi-claude-code-channels"]),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -181,7 +186,7 @@ describe("inventory", () => {
     const next = spawnEviConfig(
       {},
       {
-        eviId: "evi-ccc-research",
+        eviId: "evi-claude-code-channels-research",
         runtime: "ccc",
         provider: "claude-code-channels",
         profile: "research",
@@ -199,21 +204,23 @@ describe("inventory", () => {
       },
     );
     const inventory = loadInventory(next);
-    expect(inventory.evis["evi-ccc-research"].profile).toBe("research");
-    expect(inventory.evis["evi-ccc-research"].provider).toBe("claude-code-channels");
-    expect(inventory.evis["evi-ccc-research"].modelProvider).toBe("xai-oauth");
+    expect(inventory.evis["evi-claude-code-channels-research"].profile).toBe("research");
+    expect(inventory.evis["evi-claude-code-channels-research"].provider).toBe(
+      "claude-code-channels",
+    );
+    expect(inventory.evis["evi-claude-code-channels-research"].modelProvider).toBe("xai-oauth");
   });
 
   test("spawn rejects duplicate evi ids unless forced", () => {
     const data = {
       evis: {
-        "evi-ccc-research": {
+        "evi-claude-code-channels-research": {
           runtime: "ccc",
         },
       },
     };
     const evi = {
-      eviId: "evi-ccc-research",
+      eviId: "evi-claude-code-channels-research",
       runtime: "ccc",
       provider: "claude-code-channels",
       profile: "research",
@@ -244,7 +251,7 @@ describe("inventory", () => {
     });
     const resolved = resolveEviTarget(inventory, "evi-a");
     expect(resolved.evi.eviId).toBe("evi-a");
-    expect(resolved.target.name).toBe("ccc");
+    expect(resolved.target.name).toBe("claude-code-channels");
   });
 
   test("resolves an identity to its active processor", () => {
@@ -490,6 +497,55 @@ describe("identity routing", () => {
     expect(
       (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
     ).toBe("evi-hermes-codex");
+  });
+
+  test("builds a Claude Code Channels launch plan from active interfaces", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-claude-code-channels-nukoevi": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+        },
+      },
+      identities: {
+        nukoevi: {
+          active_evi: "evi-claude-code-channels-nukoevi",
+        },
+      },
+      interfaces: {
+        "discord:main": {
+          kind: "discord",
+          identity_id: "nukoevi",
+        },
+        "telegram:main": {
+          kind: "telegram",
+          identity_id: "nukoevi",
+        },
+      },
+    });
+    const plan = claudeCodeChannelsLaunchPlan(inventory, "nukoevi");
+    expect(plan.args).toEqual([
+      "--channels",
+      "plugin:discord@claude-plugins-official",
+      "--channels",
+      "plugin:telegram@claude-plugins-official",
+    ]);
+    expect(plan.settings.allowedChannelPlugins.map((channel) => channel.plugin)).toEqual([
+      "discord",
+      "telegram",
+    ]);
+  });
+});
+
+describe("Claude Code Channels", () => {
+  test("parses channel plugins from a start command", () => {
+    const plugins = claudeCodeChannelPluginsFromScript(
+      "claude --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official",
+    );
+    expect(plugins).toEqual([
+      { plugin: "discord", marketplace: "claude-plugins-official" },
+      { plugin: "telegram", marketplace: "claude-plugins-official" },
+    ]);
   });
 });
 
@@ -815,103 +871,156 @@ describe("tmux send", () => {
 
 describe("discovery", () => {
   test("discovers Hermes and Claude Code Channels launch agents", () => {
-    const discovery = discoverFromPlistRecords(
-      [
-        {
-          path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
-          data: {
-            Label: "ai.hermes.gateway-nukoevi",
-            ProgramArguments: [
-              "~/.hermes/hermes-agent/venv/bin/python",
-              "-m",
-              "hermes_cli.main",
-              "--profile",
-              "nukoevi",
-              "gateway",
-              "run",
-            ],
-            EnvironmentVariables: {
-              HERMES_HOME: "~/.hermes/profiles/nukoevi",
+    const root = mkdtempSync(join(tmpdir(), "evictl-discover-test-"));
+    try {
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
+            data: {
+              Label: "ai.hermes.gateway-nukoevi",
+              ProgramArguments: [
+                "~/.hermes/hermes-agent/venv/bin/python",
+                "-m",
+                "hermes_cli.main",
+                "--profile",
+                "nukoevi",
+                "gateway",
+                "run",
+              ],
+              EnvironmentVariables: {
+                HERMES_HOME: "~/.hermes/profiles/nukoevi",
+              },
+              WorkingDirectory: "~/.hermes/hermes-agent",
             },
-            WorkingDirectory: "~/.hermes/hermes-agent",
           },
-        },
-        {
-          path: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
-          data: {
-            Label: "com.local.claude-telegram-channel",
-            ProgramArguments: ["/bin/zsh", "~/.local/share/claude-telegram-channel/start.sh"],
-            WorkingDirectory: "~/Documents/Codex/hermes-agent-claude-code-channels",
+          {
+            path: join(root, "com.local.claude-code-channels.plist"),
+            data: {
+              Label: "com.local.claude-code-channels",
+              ProgramArguments: ["/bin/zsh", join(root, "start.sh")],
+              WorkingDirectory: "~/Documents/Codex/hermes-agent-claude-code-channels",
+            },
           },
-        },
-      ],
-      { ccc: true, hermes: false },
-    );
-    expect(Object.keys(discovery.targets).sort()).toEqual(["ccc", "hermes"]);
-    expect(discovery.evis["evi-hermes-nukoevi"].runtime).toBe("hermes");
-    expect(discovery.evis["evi-ccc-telegram"].runtime).toBe("ccc");
-    expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
-    expect(discovery.routes["telegram:ccc:default"].mode).toBe("primary");
+        ],
+        { ccc: true, hermes: false },
+      );
+      expect(Object.keys(discovery.targets).sort()).toEqual(["claude-code-channels", "hermes"]);
+      expect(discovery.evis["evi-hermes-nukoevi"].runtime).toBe("hermes");
+      expect(discovery.evis["evi-claude-code-channels-default"].runtime).toBe(
+        "claude-code-channels",
+      );
+      expect(discovery.interfaces["telegram:main"].identityId).toBe("default");
+      expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
+      expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("primary");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("discovers Discord and Telegram as interfaces for Claude Code Channels", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-discover-channels-test-"));
+    try {
+      const startScript = join(root, "start.sh");
+      writeFileSync(
+        startScript,
+        [
+          "session_name=\"claude-code-channels-nukoevi\"",
+          "exec tmux new-session -d -s \"${session_name}\" \"claude --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official --name nukoevi-telegram\"",
+        ].join("\n"),
+      );
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: join(root, "com.local.claude-code-channels.plist"),
+            data: {
+              Label: "com.local.claude-code-channels",
+              ProgramArguments: ["/bin/zsh", startScript],
+              WorkingDirectory: "~/Documents/Codex/hermes-agent-claude-code-channels",
+            },
+          },
+        ],
+        { "claude-code-channels": true },
+      );
+      expect(discovery.evis["evi-claude-code-channels-nukoevi"].profile).toBe("nukoevi");
+      expect(discovery.interfaces["discord:main"].identityId).toBe("nukoevi");
+      expect(discovery.interfaces["telegram:main"].identityId).toBe("nukoevi");
+      expect(discovery.routes["discord:claude-code-channels:nukoevi"].mode).toBe("primary");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("merges discovered setup into config without dropping existing data", () => {
-    const discovery = discoverFromPlistRecords(
-      [
+    const root = mkdtempSync(join(tmpdir(), "evictl-merge-discovery-test-"));
+    try {
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: join(root, "com.local.claude-code-channels.plist"),
+            data: {
+              Label: "com.local.claude-code-channels",
+              ProgramArguments: ["/bin/zsh", join(root, "start.sh")],
+              WorkingDirectory: "~/Documents/Codex/claude-code-channels",
+            },
+          },
+        ],
+        { ccc: true },
+      );
+      const merged = mergeConfigData(
         {
-          path: "/tmp/com.local.claude-telegram-channel.plist",
-          data: {
-            Label: "com.local.claude-telegram-channel",
-            ProgramArguments: ["/bin/zsh", "~/.local/share/claude-telegram-channel/start.sh"],
-            WorkingDirectory: "~/Documents/Codex/claude-code-channels",
+          routes: {
+            "telegram:manual": {
+              channel: "telegram",
+              target_evi: "evi-manual",
+            },
+          },
+          memory: {
+            event_log: "/tmp/custom-events.jsonl",
           },
         },
-      ],
-      { ccc: true },
-    );
-    const merged = mergeConfigData(
-      {
-        routes: {
-          "telegram:manual": {
-            channel: "telegram",
-            target_evi: "evi-manual",
-          },
-        },
-        memory: {
-          event_log: "/tmp/custom-events.jsonl",
-        },
-      },
-      discovery,
-    );
-    expect(Object.keys(merged.routes as Record<string, unknown>).sort()).toEqual([
-      "telegram:ccc:default",
-      "telegram:manual",
-    ]);
-    expect((merged.memory as Record<string, unknown>).event_log).toBe("/tmp/custom-events.jsonl");
-    expect((merged.evis as Record<string, unknown>)["evi-ccc-telegram"]).toBeTruthy();
+        discovery,
+      );
+      expect(Object.keys(merged.routes as Record<string, unknown>).sort()).toEqual([
+        "telegram:claude-code-channels:default",
+        "telegram:manual",
+      ]);
+      expect((merged.memory as Record<string, unknown>).event_log).toBe("/tmp/custom-events.jsonl");
+      expect(
+        (merged.evis as Record<string, unknown>)["evi-claude-code-channels-default"],
+      ).toBeTruthy();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("demotes duplicate primary routes during discovery", () => {
-    const discovery = discoverFromPlistRecords(
-      [
-        {
-          path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
-          data: {
-            Label: "ai.hermes.gateway-nukoevi",
-            ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "nukoevi"],
+    const root = mkdtempSync(join(tmpdir(), "evictl-conflict-discovery-test-"));
+    try {
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
+            data: {
+              Label: "ai.hermes.gateway-nukoevi",
+              ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "nukoevi"],
+            },
           },
-        },
-        {
-          path: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
-          data: {
-            Label: "com.local.claude-telegram-channel",
-            ProgramArguments: ["/bin/zsh", "~/.local/share/claude-telegram-channel/start.sh"],
+          {
+            path: join(root, "com.local.claude-code-channels.plist"),
+            data: {
+              Label: "com.local.claude-code-channels",
+              ProgramArguments: ["/bin/zsh", join(root, "start.sh")],
+            },
           },
-        },
-      ],
-      { ccc: true, hermes: true },
-    );
-    expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
-    expect(discovery.routes["telegram:ccc:default"].mode).toBe("standby");
-    expect(discovery.warnings.some((warning) => warning.includes("route conflict"))).toBe(true);
+        ],
+        { ccc: true, hermes: true },
+      );
+      expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
+      expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("standby");
+      expect(discovery.warnings.some((warning) => warning.includes("route conflict"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

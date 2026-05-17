@@ -88,6 +88,15 @@ evictl evi add
 evictl evi clone
 evictl evi start
 evictl evi stop
+evictl identity list
+evictl identity show
+evictl identity add
+evictl identity bind
+evictl interface list
+evictl interface bind
+evictl processor list
+evictl processor switch
+evictl processor launch-plan
 evictl spawn
 evictl monitor
 evictl stop
@@ -127,7 +136,7 @@ Manage routes:
 
 ```bash
 evictl route list
-evictl route set telegram:main --target evi-ccc-telegram --account default --mode primary
+evictl route set telegram:main --target evi-claude-code-channels-nukoevi --account default --mode primary
 ```
 
 Manage swappable interfaces and processors through an identity:
@@ -135,6 +144,7 @@ Manage swappable interfaces and processors through an identity:
 ```bash
 evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi --processor evi-hermes-grok
 evictl interface bind telegram:main nukoevi --kind telegram --address main
+evictl interface bind discord:main nukoevi --kind discord --address main
 evictl interface bind mqtt:nukoevi/inbox nukoevi --kind mqtt --address nukoevi/inbox
 evictl processor switch nukoevi evi-hermes-codex
 evictl send nukoevi --text "Run from the active processor."
@@ -144,6 +154,15 @@ Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an identity. The
 identity owns the persona and memory scope, then points at one active processor
 evi. Switching the processor changes the inner execution engine without changing
 the external interface bindings.
+
+For Claude Code Channels, `processor launch-plan` renders the channel plugins
+from the identity's active interfaces:
+
+```bash
+evictl processor switch nukoevi evi-claude-code-channels-nukoevi
+evictl processor launch-plan nukoevi
+evictl processor launch-plan nukoevi --json
+```
 
 Create another runtime target when a replica has its own launchd plist, tmux
 session, or process pattern:
@@ -155,7 +174,7 @@ evictl target add hermes-grok --provider hermes-agent --label ai.hermes.gateway-
 Create another evi identity:
 
 ```bash
-evictl evi add --provider claude-code-channels --id evi-ccc-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
+evictl evi add --provider claude-code-channels --id evi-claude-code-channels-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
 evictl evi add --provider hermes-agent --id evi-hermes-research --profile research --state-dir ~/.hermes/profiles/research
 evictl evi add --provider openclaw --id evi-openclaw-research --profile research --workspace ~/.openclaw/agents/research/agent
 ```
@@ -197,7 +216,7 @@ channel/account/peer unless `--force` is passed.
 Record feedback into the shared memory event log:
 
 ```bash
-evictl feedback evi-ccc-telegram --verdict remember --text "Prefer explicit route ownership."
+evictl feedback evi-claude-code-channels-nukoevi --verdict remember --text "Prefer explicit route ownership."
 ```
 
 Feedback is appended as JSONL with the target evi, source, verdict, confidence,
@@ -247,8 +266,8 @@ launchd plist when possible, and runs network memory sync after each pass.
 Read recent runtime output:
 
 ```bash
-evictl tail ccc
-evictl tail evi-ccc-telegram --lines 120
+evictl tail claude-code-channels
+evictl tail evi-claude-code-channels-nukoevi --lines 120
 ```
 
 `tail` reads recent tmux pane output for a configured target or evi.
@@ -256,8 +275,8 @@ evictl tail evi-ccc-telegram --lines 120
 Send a task:
 
 ```bash
-evictl send evi-ccc-telegram --text "Run the check suite." --queue-only
-evictl send evi-ccc-telegram --text "Run the check suite."
+evictl send evi-claude-code-channels-nukoevi --text "Run the check suite." --queue-only
+evictl send evi-claude-code-channels-nukoevi --text "Run the check suite."
 evictl send nukoevi --text "Run through the active processor."
 ```
 
@@ -272,20 +291,20 @@ Example:
 ```json
 {
   "targets": {
-    "ccc": {
+    "claude-code-channels": {
       "provider": "claude-code-channels",
       "label": "com.local.claude-telegram-channel",
       "plist": "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
       "tmux_sessions": ["claude-telegram-channel"],
-      "process_patterns": ["claude.*plugin:telegram", "nukoevi-telegram", "claude-telegram-channel"],
+      "process_patterns": ["claude.*plugin:(telegram|discord|fakechat)", "nukoevi-(telegram|discord)", "claude-telegram-channel"],
       "health_patterns": ["Listening for channel messages from:"]
     }
   },
   "evis": {
-    "evi-ccc-telegram": {
-      "runtime": "ccc",
+    "evi-claude-code-channels-nukoevi": {
+      "runtime": "claude-code-channels",
       "provider": "claude-code-channels",
-      "profile": "telegram",
+      "profile": "nukoevi",
       "agent_id": "",
       "session_id": "",
       "workspace": "~/Documents/claude-code-channels",
@@ -300,7 +319,7 @@ Example:
     "nukoevi": {
       "profile": "nukoevi",
       "memory_scope": "nukoevi",
-      "active_evi": "evi-ccc-telegram",
+      "active_evi": "evi-claude-code-channels-nukoevi",
       "description": ""
     }
   },
@@ -310,14 +329,27 @@ Example:
       "address": "main",
       "identity_id": "nukoevi",
       "mode": "primary"
+    },
+    "discord:main": {
+      "kind": "discord",
+      "address": "main",
+      "identity_id": "nukoevi",
+      "mode": "primary"
     }
   },
   "routes": {
-    "telegram:ccc:default": {
+    "telegram:claude-code-channels:nukoevi": {
       "channel": "telegram",
       "account_id": "default",
       "peer_id": "",
-      "target_evi": "evi-ccc-telegram",
+      "target_evi": "evi-claude-code-channels-nukoevi",
+      "mode": "primary"
+    },
+    "discord:claude-code-channels:nukoevi": {
+      "channel": "discord",
+      "account_id": "default",
+      "peer_id": "",
+      "target_evi": "evi-claude-code-channels-nukoevi",
       "mode": "primary"
     }
   },
