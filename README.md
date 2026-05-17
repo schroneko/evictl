@@ -243,12 +243,13 @@ Send a task:
 ```bash
 evictl send evi-ccc-telegram --text "Run the check suite." --queue-only
 evictl send evi-ccc-telegram --text "Run the check suite."
-evictl send evi-hermes-nukoevi --toolsets browser,web --max-turns 8 --text "Search X and summarize whether results are visible."
+evictl send evi-hermes-nukoevi --toolsets browser,web --max-turns 8 --env BROWSER_CDP_URL=ws://127.0.0.1:9222/devtools/browser/... --text "Search X and summarize whether results are visible."
 ```
 
 `send` records a task event before dispatch. For evi entries with a tmux
 `session_id`, it sends the task into that tmux session. Hermes Agent evis
 without a tmux session are delivered with `hermes --profile <profile> chat -q`.
+Use `send --env KEY=VALUE` for one-off Hermes CLI environment overrides.
 `--queue-only` records the task without delivering it.
 
 Example:

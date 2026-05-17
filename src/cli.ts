@@ -140,6 +140,7 @@ type DispatchTaskOptions = {
   queueOnly: boolean;
   toolsets?: string;
   maxTurns?: string;
+  env?: Record<string, string>;
 };
 
 type DispatchTaskResult = {
@@ -1645,11 +1646,11 @@ function extractHermesSessionId(output: string): string {
 function dispatchHermesCliTask(
   evi: Evi,
   text: string,
-  options: Pick<DispatchTaskOptions, "toolsets" | "maxTurns">,
+  options: Pick<DispatchTaskOptions, "toolsets" | "maxTurns" | "env">,
 ): DispatchTaskResult {
   const result = run(hermesCliCommand(evi, text, options), {
     cwd: concretePath(evi.workspace) || undefined,
-    env: hermesCliEnv(evi),
+    env: { ...hermesCliEnv(evi), ...(options.env ?? {}) },
   });
   const output = result.stdout.trim();
   if (result.code !== 0) {
@@ -2055,6 +2056,7 @@ function cmdSend(args: string[]): number {
   const queueOnly = hasFlag(args, "--queue-only");
   const toolsets = optionValue(args, "--toolsets");
   const maxTurns = optionValue(args, "--max-turns");
+  const env = envFromArgs(args);
   if (hasFlag(args, "--dry-run")) {
     console.log(
       `dry_run=send target=${targetEvi} method=${dispatchMethodFor(evi, queueOnly)} text=${compactText(text)}`,
@@ -2062,7 +2064,7 @@ function cmdSend(args: string[]): number {
     return 0;
   }
   const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
-  const result = dispatchTask(evi, text, { queueOnly, toolsets, maxTurns });
+  const result = dispatchTask(evi, text, { queueOnly, toolsets, maxTurns, env });
   console.log(
     `event=${event.id} type=${event.type} target=${event.target_evi} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`,
   );
@@ -2338,7 +2340,7 @@ Commands:
   memory import
   memory sync
   sync [--limit <n>]
-  send <evi> --text <text> [--subject <id>] [--source <source>] [--toolsets <names>] [--max-turns <n>] [--queue-only] [--dry-run]
+  send <evi> --text <text> [--subject <id>] [--source <source>] [--toolsets <names>] [--max-turns <n>] [--env KEY=VALUE] [--queue-only] [--dry-run]
   feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);
