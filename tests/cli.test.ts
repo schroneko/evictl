@@ -57,10 +57,11 @@ describe("resolveTarget", () => {
   test("resolves alias", () => {
     expect(resolveTarget("claude-code-channels", DEFAULT_TARGETS)).toBe("claude-code-channels");
     expect(resolveTarget("ccc", DEFAULT_TARGETS)).toBe("claude-code-channels");
+    expect(resolveTarget("hermes", DEFAULT_TARGETS)).toBe("hermes-agent");
   });
 
   test("resolves direct target", () => {
-    expect(resolveTarget("hermes", DEFAULT_TARGETS)).toBe("hermes");
+    expect(resolveTarget("hermes-agent", DEFAULT_TARGETS)).toBe("hermes-agent");
   });
 
   test("rejects unknown target", () => {
@@ -79,7 +80,7 @@ describe("resolveProvider", () => {
 describe("defaults", () => {
   test("supported targets", () => {
     expect(new Set(Object.keys(DEFAULT_TARGETS))).toEqual(
-      new Set(["openclaw", "hermes", "claude-code-channels"]),
+      new Set(["openclaw", "hermes-agent", "claude-code-channels"]),
     );
   });
 
@@ -124,7 +125,7 @@ describe("inventory", () => {
       process.env.XDG_CONFIG_HOME = root;
       const inventory = loadInventory();
       expect(new Set(Object.keys(inventory.evis))).toEqual(
-        new Set(["evi-openclaw", "evi-hermes", "evi-claude-code-channels"]),
+        new Set(["evi-openclaw", "evi-hermes-agent", "evi-claude-code-channels"]),
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -273,7 +274,7 @@ describe("inventory", () => {
     expect(resolved.evi.eviId).toBe("evi-hermes-grok");
   });
 
-  test("loads custom Hermes targets and runtime model settings", () => {
+  test("loads custom Hermes Agent targets and runtime model settings", () => {
     const inventory = loadInventory({
       targets: {
         "hermes-grok": {
@@ -305,7 +306,7 @@ describe("inventory", () => {
     });
   });
 
-  test("maps custom Hermes base URLs into runtime env", () => {
+  test("maps custom Hermes Agent base URLs into runtime env", () => {
     const inventory = loadInventory({
       evis: {
         "evi-hermes-llama": {
@@ -668,7 +669,7 @@ describe("memory events", () => {
       mkdirSync(join(hermesState, "memories"), { recursive: true });
       mkdirSync(cccState, { recursive: true });
       mkdirSync(join(openclawWorkspace, "memory"), { recursive: true });
-      writeFileSync(join(hermesState, "memories", "MEMORY.md"), "Hermes durable fact\n");
+      writeFileSync(join(hermesState, "memories", "MEMORY.md"), "Hermes Agent durable fact\n");
       writeFileSync(join(openclawWorkspace, "MEMORY.md"), "OpenClaw durable fact\n");
       writeFileSync(join(openclawWorkspace, "USER.md"), "OpenClaw user profile\n");
       writeFileSync(join(openclawWorkspace, "memory", "2026-05-15.md"), "OpenClaw daily note\n");
@@ -700,7 +701,7 @@ describe("memory events", () => {
         },
       });
       const compiled = compileNetworkMemory(inventory);
-      expect(compiled).toContain("Hermes durable fact");
+      expect(compiled).toContain("Hermes Agent durable fact");
       expect(compiled).toContain("OpenClaw durable fact");
       expect(compiled).toContain("OpenClaw user profile");
       expect(compiled).toContain("OpenClaw daily note");
@@ -870,7 +871,7 @@ describe("tmux send", () => {
 });
 
 describe("discovery", () => {
-  test("discovers Hermes and Claude Code Channels launch agents", () => {
+  test("discovers Hermes Agent and Claude Code Channels launch agents", () => {
     const root = mkdtempSync(join(tmpdir(), "evictl-discover-test-"));
     try {
       const discovery = discoverFromPlistRecords(
@@ -905,13 +906,16 @@ describe("discovery", () => {
         ],
         { ccc: true, hermes: false },
       );
-      expect(Object.keys(discovery.targets).sort()).toEqual(["claude-code-channels", "hermes"]);
-      expect(discovery.evis["evi-hermes-nukoevi"].runtime).toBe("hermes");
+      expect(Object.keys(discovery.targets).sort()).toEqual([
+        "claude-code-channels",
+        "hermes-agent",
+      ]);
+      expect(discovery.evis["evi-hermes-agent-nukoevi"].runtime).toBe("hermes-agent");
       expect(discovery.evis["evi-claude-code-channels-default"].runtime).toBe(
         "claude-code-channels",
       );
       expect(discovery.interfaces["telegram:main"].identityId).toBe("default");
-      expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
+      expect(discovery.routes["telegram:hermes-agent:nukoevi"].mode).toBe("standby");
       expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("primary");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1016,7 +1020,7 @@ describe("discovery", () => {
         ],
         { ccc: true, hermes: true },
       );
-      expect(discovery.routes["telegram:hermes:nukoevi"].mode).toBe("standby");
+      expect(discovery.routes["telegram:hermes-agent:nukoevi"].mode).toBe("standby");
       expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("standby");
       expect(discovery.warnings.some((warning) => warning.includes("route conflict"))).toBe(true);
     } finally {

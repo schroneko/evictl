@@ -81,7 +81,7 @@ Hermes Agent is a self-improving agent runtime with a strong learning loop:
 - The subagent workflow emphasizes fresh context per task and review before accepting the result.
 - Insights are computed from stored sessions, messages, tools, skills, models, platforms, cost, and activity patterns.
 
-Design implication for `evictl`: Hermes should be treated as a runtime with native memory hooks and platform adapters. Its memory-provider lifecycle is a good shape for `evictl` shared memory sinks.
+Design implication for `evictl`: Hermes Agent should be treated as a runtime with native memory hooks and platform adapters. Its memory-provider lifecycle is a good shape for `evictl` shared memory sinks.
 
 ## Claude Code Channels findings
 
@@ -110,7 +110,7 @@ Every evi needs a stable id independent from the runtime's local ids.
 Suggested internal identity fields:
 
 - `evi_id`
-- `runtime`: `openclaw`, `hermes`, or `claude-code-channels`
+- `runtime`: `openclaw`, `hermes-agent`, or `claude-code-channels`
 - `profile`
 - `agent_id`
 - `session_id`
@@ -124,7 +124,7 @@ Suggested internal identity fields:
 
 Do not share runtime state directories casually.
 
-OpenClaw warns against reusing `agentDir` across agents. Multiple Gateways require isolated state, ports, and credentials. Claude Code Channels process events inside one Claude Code session, so parallelism requires separate sessions. Hermes can cache multiple sessions, but memory writes still need scope and provenance.
+OpenClaw warns against reusing `agentDir` across agents. Multiple Gateways require isolated state, ports, and credentials. Claude Code Channels process events inside one Claude Code session, so parallelism requires separate sessions. Hermes Agent can cache multiple sessions, but memory writes still need scope and provenance.
 
 ### Routing
 
@@ -189,7 +189,7 @@ Runtime adapters need separate checks for:
 
 Independent work should run in independent sessions.
 
-OpenClaw subagents and Claude Channels both point to the same invariant: one shared session serializes unrelated work. `evictl` should spawn or bind distinct sessions for parallel evi work, then merge only distilled results.
+OpenClaw subagents and Claude Code Channels both point to the same invariant: one shared session serializes unrelated work. `evictl` should spawn or bind distinct sessions for parallel evi work, then merge only distilled results.
 
 ## Adapter shape
 

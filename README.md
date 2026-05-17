@@ -142,11 +142,11 @@ evictl route set telegram:main --target evi-claude-code-channels-nukoevi --accou
 Manage swappable interfaces and processors through an identity:
 
 ```bash
-evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi --processor evi-hermes-grok
+evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi --processor evi-hermes-agent-grok
 evictl interface bind telegram:main nukoevi --kind telegram --address main
 evictl interface bind discord:main nukoevi --kind discord --address main
 evictl interface bind mqtt:nukoevi/inbox nukoevi --kind mqtt --address nukoevi/inbox
-evictl processor switch nukoevi evi-hermes-codex
+evictl processor switch nukoevi evi-hermes-agent-codex
 evictl send nukoevi --text "Run from the active processor."
 ```
 
@@ -175,26 +175,26 @@ Create another evi identity:
 
 ```bash
 evictl evi add --provider claude-code-channels --id evi-claude-code-channels-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
-evictl evi add --provider hermes-agent --id evi-hermes-research --profile research --state-dir ~/.hermes/profiles/research
+evictl evi add --provider hermes-agent --id evi-hermes-agent-research --profile research --state-dir ~/.hermes/profiles/research
 evictl evi add --provider openclaw --id evi-openclaw-research --profile research --workspace ~/.openclaw/agents/research/agent
 ```
 
 Create Hermes Agent replicas with explicit inference providers:
 
 ```bash
-evictl evi add --provider hermes-agent --runtime hermes-grok --id evi-hermes-grok --profile grok --state-dir ~/.hermes/profiles/grok --model-provider grok --model grok-4.3
-evictl evi add --provider hermes-agent --id evi-hermes-codex --profile codex --state-dir ~/.hermes/profiles/codex --model-provider codex
-evictl evi add --provider hermes-agent --id evi-hermes-llama --profile llama --state-dir ~/.hermes/profiles/llama --model-provider llama.cpp --model local-model --base-url http://127.0.0.1:8080/v1
+evictl evi add --provider hermes-agent --runtime hermes-grok --id evi-hermes-agent-grok --profile grok --state-dir ~/.hermes/profiles/grok --model-provider grok --model grok-4.3
+evictl evi add --provider hermes-agent --id evi-hermes-agent-codex --profile codex --state-dir ~/.hermes/profiles/codex --model-provider codex
+evictl evi add --provider hermes-agent --id evi-hermes-agent-llama --profile llama --state-dir ~/.hermes/profiles/llama --model-provider llama.cpp --model local-model --base-url http://127.0.0.1:8080/v1
 ```
 
 For Hermes Agent, `--model-provider` records the process-level inference
 provider. Aliases such as `grok`, `grok-oauth`, and `supergrok` normalize to
 `xai-oauth`; `codex` normalizes to `openai-codex`; `llama.cpp` normalizes to
-Hermes' `custom` provider. `inspect <evi>` prints the environment that a launchd
+Hermes Agent's `custom` provider. `inspect <evi>` prints the environment that a launchd
 plist, tmux wrapper, or one-shot launcher can use:
 
 ```bash
-evictl inspect evi-hermes-grok
+evictl inspect evi-hermes-agent-grok
 ```
 
 `spawn <provider>` remains as a compatibility alias for `evi add`. `evi clone`

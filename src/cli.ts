@@ -252,8 +252,8 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
     processPatterns: ["openclaw", "ai.openclaw.gateway", "com.clawdbot.gateway"],
     healthPatterns: [],
   },
-  hermes: {
-    name: "hermes",
+  "hermes-agent": {
+    name: "hermes-agent",
     provider: "hermes-agent",
     label: "ai.hermes.gateway-nukoevi",
     plist: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
@@ -281,7 +281,8 @@ export const ALIASES: Record<string, string> = {
   claude: "claude-code-channels",
   "claude-code-channels": "claude-code-channels",
   channels: "claude-code-channels",
-  "hermes-agent": "hermes",
+  hermes: "hermes-agent",
+  "hermes-agent": "hermes-agent",
   "open-claw": "openclaw",
 };
 
@@ -298,7 +299,7 @@ export const PROVIDERS: Record<string, string> = {
 
 export const PROVIDER_RUNTIMES: Record<string, string> = {
   "claude-code-channels": "claude-code-channels",
-  "hermes-agent": "hermes",
+  "hermes-agent": "hermes-agent",
   openclaw: "openclaw",
 };
 
@@ -598,7 +599,12 @@ function profileFromArgs(args: string[]): string | undefined {
 }
 
 function routeMode(runningByRuntime: Record<string, boolean>, runtime: string): string {
-  const legacyRuntime = runtime === "claude-code-channels" ? "ccc" : runtime;
+  const legacyRuntime =
+    runtime === "claude-code-channels"
+      ? "ccc"
+      : runtime === "hermes-agent"
+        ? "hermes"
+        : runtime;
   return runningByRuntime[runtime] || runningByRuntime[legacyRuntime] ? "primary" : "standby";
 }
 
@@ -724,11 +730,13 @@ function addHermesDiscovery(
   const home =
     env.HERMES_HOME || join(homedir(), ".hermes", "profiles", profileFromArgs(args) ?? "default");
   const profile = profileFromArgs(args) ?? basename(home) ?? "default";
-  const eviId = `evi-hermes-${slug(profile)}`;
-  discovery.targets.hermes = targetWithPlist("hermes", record.data, record.path);
+  const runtime = "hermes-agent";
+  const mode = routeMode(runningByRuntime, runtime);
+  const eviId = `evi-hermes-agent-${slug(profile)}`;
+  discovery.targets[runtime] = targetWithPlist(runtime, record.data, record.path);
   discovery.evis[eviId] = {
     eviId,
-    runtime: "hermes",
+    runtime,
     provider: "hermes-agent",
     profile,
     agentId: "",
@@ -743,20 +751,20 @@ function addHermesDiscovery(
     baseUrl: "",
     env: {},
   };
-  discovery.routes[`telegram:hermes:${slug(profile)}`] = {
-    key: `telegram:hermes:${slug(profile)}`,
+  discovery.routes[`telegram:hermes-agent:${slug(profile)}`] = {
+    key: `telegram:hermes-agent:${slug(profile)}`,
     channel: "telegram",
     accountId: "default",
     peerId: "",
     targetEvi: eviId,
-    mode: routeMode(runningByRuntime, "hermes"),
+    mode,
   };
   discovery.sources.push({
-    runtime: "hermes",
+    runtime,
     kind: "launchd",
     path: record.path,
     label: plistLabel(record.data),
-    status: routeMode(runningByRuntime, "hermes"),
+    status: mode,
   });
   const stateFiles = [
     ["channel-directory", "channel_directory.json"],
@@ -767,7 +775,7 @@ function addHermesDiscovery(
     const path = join(home, file);
     if (existsSync(path)) {
       discovery.sources.push({
-        runtime: "hermes",
+        runtime,
         kind,
         path,
         label: profile,
@@ -932,7 +940,7 @@ function addOpenClawDiscovery(
 
 function classifyPlist(
   record: PlistRecord,
-): "hermes" | "claude-code-channels" | "openclaw" | undefined {
+): "hermes-agent" | "claude-code-channels" | "openclaw" | undefined {
   const haystack = [
     record.path,
     plistLabel(record.data),
@@ -948,7 +956,7 @@ function classifyPlist(
     haystack.includes("hermes-agent") ||
     haystack.includes("ai.hermes")
   )
-    return "hermes";
+    return "hermes-agent";
   if (haystack.includes("openclaw") || haystack.includes("open-claw")) return "openclaw";
   return undefined;
 }
@@ -970,7 +978,7 @@ export function discoverFromPlistRecords(
   const discovery = defaultDiscovery();
   for (const record of records) {
     const runtime = classifyPlist(record);
-    if (runtime === "hermes") addHermesDiscovery(discovery, record, runningByRuntime);
+    if (runtime === "hermes-agent") addHermesDiscovery(discovery, record, runningByRuntime);
     if (runtime === "claude-code-channels")
       addClaudeCodeChannelsDiscovery(discovery, record, runningByRuntime);
     if (runtime === "openclaw") addOpenClawDiscovery(discovery, record, runningByRuntime);
