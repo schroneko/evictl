@@ -14,6 +14,7 @@ import {
   createTaskEvent,
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
+  hermesCliCommand,
   loadInventory,
   main,
   mergeConfigData,
@@ -243,6 +244,26 @@ describe("inventory", () => {
       HERMES_INFERENCE_PROVIDER: "xai-oauth",
       HERMES_INFERENCE_MODEL: "grok-4.3",
       HERMES_MODEL: "grok-4.3",
+    });
+  });
+
+  test("maps custom Hermes base URLs into runtime env", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-llama": {
+          runtime: "hermes",
+          provider: "hermes-agent",
+          profile: "llama",
+          model_provider: "llama.cpp",
+          model: "local-model",
+          base_url: "http://127.0.0.1:8080/v1",
+        },
+      },
+    });
+    expect(runtimeEnvForEvi(inventory.evis["evi-hermes-llama"])).toMatchObject({
+      HERMES_INFERENCE_PROVIDER: "custom",
+      HERMES_INFERENCE_MODEL: "local-model",
+      OPENAI_BASE_URL: "http://127.0.0.1:8080/v1",
     });
   });
 
@@ -601,6 +622,45 @@ describe("tmux send", () => {
       "evi-session",
       "-S",
       "-25",
+    ]);
+  });
+
+  test("builds Hermes CLI send commands with profile and tool options", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-nukoevi": {
+          runtime: "hermes",
+          provider: "hermes-agent",
+          profile: "nukoevi",
+          workspace: "/tmp/hermes-agent",
+          state_dir: "/tmp/hermes-home",
+          model_provider: "grok",
+          model: "grok-4.3",
+        },
+      },
+    });
+    const command = hermesCliCommand(
+      inventory.evis["evi-hermes-nukoevi"],
+      "Search X",
+      { toolsets: "browser,web", maxTurns: "8" },
+    );
+    expect(command.slice(1)).toEqual([
+      "--profile",
+      "nukoevi",
+      "chat",
+      "-q",
+      "Search X",
+      "-Q",
+      "--source",
+      "evictl",
+      "--provider",
+      "xai-oauth",
+      "--model",
+      "grok-4.3",
+      "--toolsets",
+      "browser,web",
+      "--max-turns",
+      "8",
     ]);
   });
 });
