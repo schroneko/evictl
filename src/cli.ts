@@ -276,25 +276,10 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
   },
 };
 
-export const ALIASES: Record<string, string> = {
-  ccc: "claude-code-channels",
-  claude: "claude-code-channels",
-  "claude-code-channels": "claude-code-channels",
-  channels: "claude-code-channels",
-  hermes: "hermes-agent",
-  "hermes-agent": "hermes-agent",
-  "open-claw": "openclaw",
-};
-
 export const PROVIDERS: Record<string, string> = {
-  ccc: "claude-code-channels",
-  claude: "claude-code-channels",
-  channels: "claude-code-channels",
   "claude-code-channels": "claude-code-channels",
-  hermes: "hermes-agent",
   "hermes-agent": "hermes-agent",
   openclaw: "openclaw",
-  "open-claw": "openclaw",
 };
 
 export const PROVIDER_RUNTIMES: Record<string, string> = {
@@ -405,7 +390,7 @@ export function loadTargets(data = loadConfigData()): Record<string, Target> {
   const targets = structuredClone(DEFAULT_TARGETS);
   const configuredTargets = objectValue(data.targets);
   for (const [name, rawTarget] of Object.entries(configuredTargets)) {
-    const targetName = ALIASES[name] ?? name;
+    const targetName = name;
     const raw = objectValue(rawTarget);
     const base = targets[targetName] ?? {
       name: targetName,
@@ -599,13 +584,7 @@ function profileFromArgs(args: string[]): string | undefined {
 }
 
 function routeMode(runningByRuntime: Record<string, boolean>, runtime: string): string {
-  const legacyRuntime =
-    runtime === "claude-code-channels"
-      ? "ccc"
-      : runtime === "hermes-agent"
-        ? "hermes"
-        : runtime;
-  return runningByRuntime[runtime] || runningByRuntime[legacyRuntime] ? "primary" : "standby";
+  return runningByRuntime[runtime] ? "primary" : "standby";
 }
 
 function readTextIfExists(path: string): string {
@@ -957,7 +936,7 @@ function classifyPlist(
     haystack.includes("ai.hermes")
   )
     return "hermes-agent";
-  if (haystack.includes("openclaw") || haystack.includes("open-claw")) return "openclaw";
+  if (haystack.includes("openclaw")) return "openclaw";
   return undefined;
 }
 
@@ -1033,7 +1012,7 @@ export function setTargetConfig(
   target: Target,
   force = false,
 ): Record<string, unknown> {
-  const targetName = ALIASES[target.name] ?? target.name;
+  const targetName = target.name;
   const normalizedTarget = { ...target, name: targetName };
   const targets = objectValue(data.targets);
   if (!force && targets[targetName]) {
@@ -1291,7 +1270,7 @@ export function mergeConfigData(
 }
 
 export function resolveTarget(name: string, targets: Record<string, Target>): string {
-  const key = ALIASES[name] ?? name;
+  const key = name;
   if (!(key in targets)) {
     const known = Object.keys(targets).sort().join(", ");
     throw new Error(`unknown target: ${name} (known: ${known})`);

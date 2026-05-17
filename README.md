@@ -168,7 +168,7 @@ Create another runtime target when a replica has its own launchd plist, tmux
 session, or process pattern:
 
 ```bash
-evictl target add hermes-grok --provider hermes-agent --label ai.hermes.gateway-grok --plist ~/Library/LaunchAgents/ai.hermes.gateway-grok.plist --tmux hermes-grok --process 'hermes_cli.main.*grok'
+evictl target add hermes-agent-grok --provider hermes-agent --label ai.hermes.gateway-grok --plist ~/Library/LaunchAgents/ai.hermes.gateway-grok.plist --tmux hermes-agent-grok --process 'hermes_cli.main.*grok'
 ```
 
 Create another evi identity:
@@ -182,7 +182,7 @@ evictl evi add --provider openclaw --id evi-openclaw-research --profile research
 Create Hermes Agent replicas with explicit inference providers:
 
 ```bash
-evictl evi add --provider hermes-agent --runtime hermes-grok --id evi-hermes-agent-grok --profile grok --state-dir ~/.hermes/profiles/grok --model-provider grok --model grok-4.3
+evictl evi add --provider hermes-agent --runtime hermes-agent-grok --id evi-hermes-agent-grok --profile grok --state-dir ~/.hermes/profiles/grok --model-provider grok --model grok-4.3
 evictl evi add --provider hermes-agent --id evi-hermes-agent-codex --profile codex --state-dir ~/.hermes/profiles/codex --model-provider codex
 evictl evi add --provider hermes-agent --id evi-hermes-agent-llama --profile llama --state-dir ~/.hermes/profiles/llama --model-provider llama.cpp --model local-model --base-url http://127.0.0.1:8080/v1
 ```
