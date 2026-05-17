@@ -52,6 +52,22 @@ export type Evi = {
   env: Record<string, string>;
 };
 
+export type Identity = {
+  identityId: string;
+  profile: string;
+  memoryScope: string;
+  activeEvi: string;
+  description: string;
+};
+
+export type InterfaceBinding = {
+  key: string;
+  kind: string;
+  address: string;
+  identityId: string;
+  mode: string;
+};
+
 export type Route = {
   key: string;
   channel: string;
@@ -64,6 +80,8 @@ export type Route = {
 export type Inventory = {
   targets: Record<string, Target>;
   evis: Record<string, Evi>;
+  identities: Record<string, Identity>;
+  interfaces: Record<string, InterfaceBinding>;
   routes: Record<string, Route>;
   memoryEventLog: string;
   memoryCompiledNotes: string;
@@ -111,6 +129,8 @@ export type DiscoverySource = {
 export type Discovery = {
   targets: Record<string, Target>;
   evis: Record<string, Evi>;
+  identities: Record<string, Identity>;
+  interfaces: Record<string, InterfaceBinding>;
   routes: Record<string, Route>;
   memory: {
     eventLog: string;
@@ -160,17 +180,25 @@ const DEFAULT_GLOBAL_OPTIONS: GlobalOptions = {
 const VALUE_OPTIONS = new Set([
   "--account",
   "--account-id",
+  "--active-evi",
+  "--active-processor",
+  "--address",
   "--agent",
   "--agent-id",
   "--channel",
   "--config",
   "--confidence",
+  "--description",
   "--id",
+  "--identity",
   "--interval",
   "--health",
+  "--kind",
   "--label",
   "--lines",
   "--limit",
+  "--memory",
+  "--memory-scope",
   "--mode",
   "--name",
   "--network",
@@ -180,6 +208,7 @@ const VALUE_OPTIONS = new Set([
   "--profile",
   "--provider",
   "--process",
+  "--processor",
   "--query",
   "--replica-of",
   "--role",
@@ -195,6 +224,7 @@ const VALUE_OPTIONS = new Set([
   "--subject",
   "--target",
   "--target-evi",
+  "--target-identity",
   "--text",
   "--tmux",
   "--verdict",
@@ -432,6 +462,44 @@ export function loadInventory(data = loadConfigData()): Inventory {
       env: stringMap(raw.env),
     };
   }
+  const identities: Record<string, Identity> = {};
+  const configuredIdentities = objectValue(data.identities);
+  for (const [identityId, rawIdentity] of Object.entries(configuredIdentities)) {
+    const raw = objectValue(rawIdentity);
+    const activeEvi = stringValue(
+      raw.active_evi ?? raw.activeEvi ?? raw.active_processor ?? raw.activeProcessor,
+    );
+    if (activeEvi && !evis[activeEvi]) {
+      const known = Object.keys(evis).sort().join(", ");
+      throw new Error(`identity ${identityId} has unknown active evi: ${activeEvi} (known: ${known})`);
+    }
+    identities[identityId] = {
+      identityId,
+      profile: stringValue(raw.profile, identityId),
+      memoryScope: stringValue(raw.memory_scope ?? raw.memoryScope, identityId),
+      activeEvi,
+      description: stringValue(raw.description),
+    };
+  }
+  const interfaces: Record<string, InterfaceBinding> = {};
+  const configuredInterfaces = objectValue(data.interfaces);
+  for (const [key, rawInterface] of Object.entries(configuredInterfaces)) {
+    const raw = objectValue(rawInterface);
+    const kind = stringValue(raw.kind) || key.split(":", 1)[0] || "";
+    const identityId = stringValue(raw.identity_id ?? raw.identityId ?? raw.target_identity ?? raw.targetIdentity);
+    if (!kind || !identityId) throw new Error(`interface missing kind or identity_id: ${key}`);
+    if (!identities[identityId]) {
+      const known = Object.keys(identities).sort().join(", ");
+      throw new Error(`interface ${key} has unknown identity: ${identityId} (known: ${known})`);
+    }
+    interfaces[key] = {
+      key,
+      kind,
+      address: stringValue(raw.address),
+      identityId,
+      mode: stringValue(raw.mode, "primary"),
+    };
+  }
   const routes: Record<string, Route> = {};
   const configuredRoutes = objectValue(data.routes);
   for (const [key, rawRoute] of Object.entries(configuredRoutes)) {
@@ -452,6 +520,8 @@ export function loadInventory(data = loadConfigData()): Inventory {
   return {
     targets,
     evis,
+    identities,
+    interfaces,
     routes,
     memoryEventLog: stringValue(
       memory.event_log ?? memory.eventLog,
@@ -468,6 +538,8 @@ function defaultDiscovery(): Discovery {
   return {
     targets: {},
     evis: {},
+    identities: {},
+    interfaces: {},
     routes: {},
     memory: {
       eventLog: "~/.local/share/evictl/events.jsonl",
@@ -825,6 +897,24 @@ function eviToConfig(evi: Evi): Record<string, unknown> {
   };
 }
 
+function identityToConfig(identity: Identity): Record<string, unknown> {
+  return {
+    profile: identity.profile,
+    memory_scope: identity.memoryScope,
+    active_evi: identity.activeEvi,
+    description: identity.description,
+  };
+}
+
+function interfaceToConfig(binding: InterfaceBinding): Record<string, unknown> {
+  return {
+    kind: binding.kind,
+    address: binding.address,
+    identity_id: binding.identityId,
+    mode: binding.mode,
+  };
+}
+
 function routeToConfig(route: Route): Record<string, unknown> {
   return {
     channel: route.channel,
@@ -832,6 +922,76 @@ function routeToConfig(route: Route): Record<string, unknown> {
     peer_id: route.peerId,
     target_evi: route.targetEvi,
     mode: route.mode,
+  };
+}
+
+export function setIdentityConfig(
+  data: Record<string, unknown>,
+  identity: Identity,
+  force = false,
+): Record<string, unknown> {
+  const inventory = loadInventory(data);
+  const configuredIdentities = objectValue(data.identities);
+  if (identity.activeEvi && !inventory.evis[identity.activeEvi]) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown active evi: ${identity.activeEvi} (known: ${known})`);
+  }
+  if (!force && configuredIdentities[identity.identityId]) {
+    throw new Error(`identity already exists: ${identity.identityId}`);
+  }
+  return {
+    ...data,
+    identities: {
+      ...configuredIdentities,
+      [identity.identityId]: identityToConfig(identity),
+    },
+  };
+}
+
+export function bindIdentityProcessorConfig(
+  data: Record<string, unknown>,
+  identityId: string,
+  eviId: string,
+): Record<string, unknown> {
+  const inventory = loadInventory(data);
+  const identity = inventory.identities[identityId];
+  if (!identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
+  if (!inventory.evis[eviId]) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown evi: ${eviId} (known: ${known})`);
+  }
+  return {
+    ...data,
+    identities: {
+      ...objectValue(data.identities),
+      [identityId]: identityToConfig({ ...identity, activeEvi: eviId }),
+    },
+  };
+}
+
+export function setInterfaceConfig(
+  data: Record<string, unknown>,
+  binding: InterfaceBinding,
+  force = false,
+): Record<string, unknown> {
+  const inventory = loadInventory(data);
+  const configuredInterfaces = objectValue(data.interfaces);
+  if (!inventory.identities[binding.identityId]) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${binding.identityId} (known: ${known})`);
+  }
+  if (!force && configuredInterfaces[binding.key]) {
+    throw new Error(`interface already exists: ${binding.key}`);
+  }
+  return {
+    ...data,
+    interfaces: {
+      ...configuredInterfaces,
+      [binding.key]: interfaceToConfig(binding),
+    },
   };
 }
 
@@ -918,6 +1078,12 @@ export function mergeConfigData(
     targets[name] = targetToConfig(target);
   const evis = { ...objectValue(existing.evis) };
   for (const [eviId, evi] of Object.entries(discovery.evis)) evis[eviId] = eviToConfig(evi);
+  const identities = { ...objectValue(existing.identities) };
+  for (const [identityId, identity] of Object.entries(discovery.identities))
+    identities[identityId] = identityToConfig(identity);
+  const interfaces = { ...objectValue(existing.interfaces) };
+  for (const [key, binding] of Object.entries(discovery.interfaces))
+    interfaces[key] = interfaceToConfig(binding);
   const routes = { ...objectValue(existing.routes) };
   for (const [key, route] of Object.entries(discovery.routes)) routes[key] = routeToConfig(route);
   const memory = {
@@ -929,6 +1095,8 @@ export function mergeConfigData(
     ...existing,
     targets,
     evis,
+    identities,
+    interfaces,
     routes,
     memory,
   };
@@ -1104,6 +1272,24 @@ export function resolveEviTarget(
     throw new Error(`unknown runtime for evi ${eviId}: ${evi.runtime} (known: ${known})`);
   }
   return { evi, target };
+}
+
+export function resolveProcessorTarget(
+  inventory: Inventory,
+  targetId: string,
+): { evi: Evi; target: Target; identity?: Identity } {
+  if (inventory.evis[targetId]) return resolveEviTarget(inventory, targetId);
+  const identity = inventory.identities[targetId];
+  if (!identity) {
+    const evis = Object.keys(inventory.evis).sort();
+    const identities = Object.keys(inventory.identities).sort();
+    const known = [...evis, ...identities].join(", ");
+    throw new Error(`unknown evi or identity: ${targetId} (known: ${known})`);
+  }
+  if (!identity.activeEvi) {
+    throw new Error(`identity has no active evi: ${targetId}`);
+  }
+  return { ...resolveEviTarget(inventory, identity.activeEvi), identity };
 }
 
 function displayPath(value: string): string {
@@ -1819,6 +2005,154 @@ function cmdEviStop(args: string[]): number {
   return 0;
 }
 
+function cmdIdentityList(): number {
+  const inventory = loadInventory();
+  const identities = Object.values(inventory.identities);
+  if (identities.length === 0) {
+    console.log("no identities configured");
+    return 0;
+  }
+  const width = Math.max(...identities.map((identity) => identity.identityId.length));
+  for (const identity of identities.sort((a, b) => a.identityId.localeCompare(b.identityId))) {
+    const active = identity.activeEvi || "-";
+    const processor = active !== "-" && inventory.evis[active] ? inventory.evis[active].provider : "-";
+    console.log(
+      `${identity.identityId.padEnd(width)}  profile=${identity.profile}  memory=${identity.memoryScope || "-"}  active=${active}  processor=${processor}`,
+    );
+  }
+  return 0;
+}
+
+function cmdIdentityShow(args: string[]): number {
+  const identityId = required(args[0], "identity show requires an identity id");
+  const inventory = loadInventory();
+  const identity = inventory.identities[identityId];
+  if (!identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
+  console.log(`identity=${identity.identityId}`);
+  console.log(`profile=${identity.profile}`);
+  console.log(`memory_scope=${identity.memoryScope || "-"}`);
+  console.log(`active_evi=${identity.activeEvi || "-"}`);
+  console.log(`description=${identity.description || "-"}`);
+  const interfaces = Object.values(inventory.interfaces).filter(
+    (binding) => binding.identityId === identity.identityId,
+  );
+  console.log(`interfaces=${interfaces.length}`);
+  for (const binding of interfaces.sort((a, b) => a.key.localeCompare(b.key))) {
+    console.log(`- ${binding.key}: ${binding.kind}/${binding.address || "-"} (${binding.mode})`);
+  }
+  return 0;
+}
+
+function cmdIdentityAdd(args: string[]): number {
+  const identityId = required(args[0], "identity add requires an identity id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const identity: Identity = {
+    identityId,
+    profile: optionValue(args, "--profile") ?? identityId,
+    memoryScope: optionValue(args, "--memory-scope") ?? optionValue(args, "--memory") ?? identityId,
+    activeEvi:
+      optionValue(args, "--processor") ??
+      optionValue(args, "--active-evi") ??
+      optionValue(args, "--active-processor") ??
+      "",
+    description: optionValue(args, "--description") ?? "",
+  };
+  const next = setIdentityConfig(loadConfigData(path), identity, hasFlag(args, "--force"));
+  writeConfigData(path, next);
+  console.log(
+    `identity=${identity.identityId} profile=${identity.profile} memory=${identity.memoryScope || "-"} active=${identity.activeEvi || "-"}`,
+  );
+  return 0;
+}
+
+function cmdIdentityBind(args: string[]): number {
+  const identityId = required(args[0], "identity bind requires an identity id");
+  const eviId = required(args[1], "identity bind requires an evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
+  writeConfigData(path, next);
+  console.log(`identity=${identityId} active=${eviId}`);
+  return 0;
+}
+
+function cmdProcessorList(): number {
+  const inventory = loadInventory();
+  const evis = Object.values(inventory.evis);
+  const width = Math.max(...evis.map((evi) => evi.eviId.length));
+  for (const evi of evis.sort((a, b) => a.eviId.localeCompare(b.eviId))) {
+    const identities =
+      Object.values(inventory.identities)
+        .filter((identity) => identity.activeEvi === evi.eviId)
+        .map((identity) => identity.identityId)
+        .sort()
+        .join(",") || "-";
+    console.log(
+      `${evi.eviId.padEnd(width)}  provider=${evi.provider}  runtime=${evi.runtime}  profile=${evi.profile}  identities=${identities}`,
+    );
+  }
+  return 0;
+}
+
+function cmdProcessorBind(args: string[]): number {
+  const identityId = required(args[0], "processor bind requires an identity id");
+  const eviId = required(args[1], "processor bind requires an evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
+  writeConfigData(path, next);
+  console.log(`identity=${identityId} processor=${eviId}`);
+  return 0;
+}
+
+function cmdInterfaceList(): number {
+  const inventory = loadInventory();
+  const bindings = Object.values(inventory.interfaces);
+  if (bindings.length === 0) {
+    console.log("no interfaces configured");
+    return 0;
+  }
+  const width = Math.max(...bindings.map((binding) => binding.key.length));
+  for (const binding of bindings.sort((a, b) => a.key.localeCompare(b.key))) {
+    const identity = inventory.identities[binding.identityId];
+    const active = identity?.activeEvi || "-";
+    console.log(
+      `${binding.key.padEnd(width)}  kind=${binding.kind}  address=${binding.address || "-"}  identity=${binding.identityId}  active=${active}  mode=${binding.mode}`,
+    );
+  }
+  return 0;
+}
+
+function cmdInterfaceBind(args: string[]): number {
+  const key = required(args[0], "interface bind requires an interface key");
+  const identityId =
+    optionValue(args, "--identity") ??
+    optionValue(args, "--target") ??
+    optionValue(args, "--target-identity") ??
+    args[1] ??
+    "";
+  if (!identityId) throw new Error("interface bind requires an identity id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const kind = optionValue(args, "--kind") ?? key.split(":", 1)[0] ?? "";
+  const binding: InterfaceBinding = {
+    key,
+    kind,
+    address: optionValue(args, "--address") ?? "",
+    identityId,
+    mode: optionValue(args, "--mode") ?? "primary",
+  };
+  if (!["primary", "standby", "mirror", "shadow", "review", "rescue"].includes(binding.mode)) {
+    throw new Error(`unsupported interface mode: ${binding.mode}`);
+  }
+  const next = setInterfaceConfig(loadConfigData(path), binding, hasFlag(args, "--force"));
+  writeConfigData(path, next);
+  console.log(
+    `interface=${binding.key} kind=${binding.kind} address=${binding.address || "-"} identity=${binding.identityId} mode=${binding.mode}`,
+  );
+  return 0;
+}
+
 function cmdRouteList(): number {
   const inventory = loadInventory();
   const routes = Object.values(inventory.routes);
@@ -1953,31 +2287,30 @@ function cmdSync(args: string[]): number {
 }
 
 function cmdSend(args: string[]): number {
-  const targetEvi = required(args[0], "send requires a target evi");
+  const requestedTarget = required(args[0], "send requires a target evi or identity");
   const path = optionValue(args, "--config") ?? configPath();
   const inventory = loadInventory(loadConfigData(path));
-  const evi = inventory.evis[targetEvi];
-  if (!evi) {
-    const known = Object.keys(inventory.evis).sort().join(", ");
-    throw new Error(`unknown evi: ${targetEvi} (known: ${known})`);
-  }
+  const resolved = resolveProcessorTarget(inventory, requestedTarget);
+  const targetEvi = resolved.evi.eviId;
   const text = optionValue(args, "--text") ?? "";
   const event = createTaskEvent(inventory, targetEvi, {
     text,
-    subject: optionValue(args, "--subject"),
+    subject: optionValue(args, "--subject") ?? resolved.identity?.identityId,
     source: optionValue(args, "--source"),
   });
   const queueOnly = hasFlag(args, "--queue-only");
   if (hasFlag(args, "--dry-run")) {
+    const identity = resolved.identity ? ` identity=${resolved.identity.identityId}` : "";
     console.log(
-      `dry_run=send target=${targetEvi} method=${dispatchMethodFor(queueOnly)} text=${compactText(text)}`,
+      `dry_run=send target=${targetEvi}${identity} method=${dispatchMethodFor(queueOnly)} text=${compactText(text)}`,
     );
     return 0;
   }
   const eventLog = appendMemoryEvent(inventory.memoryEventLog, event);
-  const result = dispatchTask(evi, text, { queueOnly });
+  const result = dispatchTask(resolved.evi, text, { queueOnly });
+  const identity = resolved.identity ? ` identity=${resolved.identity.identityId}` : "";
   console.log(
-    `event=${event.id} type=${event.type} target=${event.target_evi} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`,
+    `event=${event.id} type=${event.type} target=${event.target_evi}${identity} delivered=${result.delivered} method=${result.method} detail=${result.detail} log=${eventLog}`,
   );
   return result.method === "tmux" && !result.delivered ? 1 : 0;
 }
@@ -2229,6 +2562,16 @@ Commands:
   evi clone <source-evi> [--provider <provider>] [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   evi start <evi>
   evi stop <evi>
+  identity list
+  identity show <identity>
+  identity add <identity> [--profile <profile>] [--memory-scope <scope>] [--processor <evi>] [--description <text>] [--force]
+  identity bind <identity> <evi>
+  identity switch <identity> <evi>
+  interface list
+  interface bind <key> <identity> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
+  processor list
+  processor bind <identity> <evi>
+  processor switch <identity> <evi>
   spawn <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   start <target>
   stop <target>
@@ -2246,7 +2589,7 @@ Commands:
   memory import
   memory sync
   sync [--limit <n>]
-  send <evi> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
+  send <evi-or-identity> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
   feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);
@@ -2284,6 +2627,16 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "evi" && args[0] === "clone") return cmdEviClone(args.slice(1));
   if (command === "evi" && args[0] === "start") return cmdEviStart(args.slice(1));
   if (command === "evi" && args[0] === "stop") return cmdEviStop(args.slice(1));
+  if (command === "identity" && args[0] === "list") return cmdIdentityList();
+  if (command === "identity" && args[0] === "show") return cmdIdentityShow(args.slice(1));
+  if (command === "identity" && args[0] === "add") return cmdIdentityAdd(args.slice(1));
+  if (command === "identity" && args[0] === "bind") return cmdIdentityBind(args.slice(1));
+  if (command === "identity" && args[0] === "switch") return cmdIdentityBind(args.slice(1));
+  if (command === "interface" && args[0] === "list") return cmdInterfaceList();
+  if (command === "interface" && args[0] === "bind") return cmdInterfaceBind(args.slice(1));
+  if (command === "processor" && args[0] === "list") return cmdProcessorList();
+  if (command === "processor" && args[0] === "bind") return cmdProcessorBind(args.slice(1));
+  if (command === "processor" && args[0] === "switch") return cmdProcessorBind(args.slice(1));
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();
   if (command === "memory" && args[0] === "promote") return cmdMemoryPromote(args.slice(1));
   if (command === "memory" && args[0] === "search") return cmdMemorySearch(args.slice(1));

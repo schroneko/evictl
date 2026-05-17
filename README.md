@@ -130,6 +130,21 @@ evictl route list
 evictl route set telegram:main --target evi-ccc-telegram --account default --mode primary
 ```
 
+Manage swappable interfaces and processors through an identity:
+
+```bash
+evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi --processor evi-hermes-grok
+evictl interface bind telegram:main nukoevi --kind telegram --address main
+evictl interface bind mqtt:nukoevi/inbox nukoevi --kind mqtt --address nukoevi/inbox
+evictl processor switch nukoevi evi-hermes-codex
+evictl send nukoevi --text "Run from the active processor."
+```
+
+Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an identity. The
+identity owns the persona and memory scope, then points at one active processor
+evi. Switching the processor changes the inner execution engine without changing
+the external interface bindings.
+
 Create another runtime target when a replica has its own launchd plist, tmux
 session, or process pattern:
 
@@ -243,11 +258,13 @@ Send a task:
 ```bash
 evictl send evi-ccc-telegram --text "Run the check suite." --queue-only
 evictl send evi-ccc-telegram --text "Run the check suite."
+evictl send nukoevi --text "Run through the active processor."
 ```
 
 `send` records a task event before dispatch. For evi entries with a tmux
 `session_id`, it sends the task into that tmux session. Non-queued sends require
-a configured and running tmux session. `--queue-only` records the task without
+a configured and running tmux session. Identity targets resolve to their active
+processor evi before dispatch. `--queue-only` records the task without
 delivering it.
 
 Example:
@@ -277,6 +294,22 @@ Example:
       "model": "",
       "base_url": "",
       "env": {}
+    }
+  },
+  "identities": {
+    "nukoevi": {
+      "profile": "nukoevi",
+      "memory_scope": "nukoevi",
+      "active_evi": "evi-ccc-telegram",
+      "description": ""
+    }
+  },
+  "interfaces": {
+    "telegram:main": {
+      "kind": "telegram",
+      "address": "main",
+      "identity_id": "nukoevi",
+      "mode": "primary"
     }
   },
   "routes": {

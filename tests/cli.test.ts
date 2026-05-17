@@ -6,8 +6,11 @@ import { join } from "node:path";
 import {
   ALIASES,
   DEFAULT_TARGETS,
+  type Identity,
+  type InterfaceBinding,
   type Route,
   appendMemoryEvent,
+  bindIdentityProcessorConfig,
   compileMemoryNotes,
   compileNetworkMemory,
   createFeedbackEvent,
@@ -23,10 +26,13 @@ import {
   queueTaskEvent,
   readMemoryEvents,
   resolveEviTarget,
+  resolveProcessorTarget,
   resolveProvider,
   resolveTarget,
   runtimeEnvForEvi,
   searchMemory,
+  setIdentityConfig,
+  setInterfaceConfig,
   setRouteConfig,
   setTargetConfig,
   spawnEviConfig,
@@ -144,6 +150,33 @@ describe("inventory", () => {
     }
   });
 
+  test("loads identities and interface bindings", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-grok": {
+          runtime: "hermes",
+          provider: "hermes-agent",
+        },
+      },
+      identities: {
+        nukoevi: {
+          profile: "nukoevi",
+          memory_scope: "nukoevi",
+          active_evi: "evi-hermes-grok",
+        },
+      },
+      interfaces: {
+        "telegram:main": {
+          kind: "telegram",
+          address: "main",
+          identity_id: "nukoevi",
+        },
+      },
+    });
+    expect(inventory.identities.nukoevi.activeEvi).toBe("evi-hermes-grok");
+    expect(inventory.interfaces["telegram:main"].identityId).toBe("nukoevi");
+  });
+
   test("spawns configured evi inventory", () => {
     const next = spawnEviConfig(
       {},
@@ -212,6 +245,25 @@ describe("inventory", () => {
     const resolved = resolveEviTarget(inventory, "evi-a");
     expect(resolved.evi.eviId).toBe("evi-a");
     expect(resolved.target.name).toBe("ccc");
+  });
+
+  test("resolves an identity to its active processor", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-grok": {
+          runtime: "hermes",
+          provider: "hermes-agent",
+        },
+      },
+      identities: {
+        nukoevi: {
+          active_evi: "evi-hermes-grok",
+        },
+      },
+    });
+    const resolved = resolveProcessorTarget(inventory, "nukoevi");
+    expect(resolved.identity?.identityId).toBe("nukoevi");
+    expect(resolved.evi.eviId).toBe("evi-hermes-grok");
   });
 
   test("loads custom Hermes targets and runtime model settings", () => {
@@ -374,6 +426,70 @@ describe("routes", () => {
     };
     expect(() => setRouteConfig(data, route)).toThrow("duplicate primary route");
     expect(setRouteConfig(data, route, true).routes).toBeTruthy();
+  });
+});
+
+describe("identity routing", () => {
+  test("sets identity and interface config data", () => {
+    const identity: Identity = {
+      identityId: "nukoevi",
+      profile: "nukoevi",
+      memoryScope: "nukoevi",
+      activeEvi: "evi-hermes-grok",
+      description: "",
+    };
+    const binding: InterfaceBinding = {
+      key: "telegram:main",
+      kind: "telegram",
+      address: "main",
+      identityId: "nukoevi",
+      mode: "primary",
+    };
+    const withIdentity = setIdentityConfig(
+      {
+        evis: {
+          "evi-hermes-grok": {
+            runtime: "hermes",
+            provider: "hermes-agent",
+          },
+        },
+      },
+      identity,
+    );
+    const next = setInterfaceConfig(withIdentity, binding);
+    expect(
+      (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+    ).toBe("evi-hermes-grok");
+    expect(
+      (next.interfaces as Record<string, Record<string, string>>)["telegram:main"].identity_id,
+    ).toBe("nukoevi");
+  });
+
+  test("switches an identity active processor", () => {
+    const next = bindIdentityProcessorConfig(
+      {
+        evis: {
+          "evi-hermes-grok": {
+            runtime: "hermes",
+            provider: "hermes-agent",
+          },
+          "evi-hermes-codex": {
+            runtime: "hermes",
+            provider: "hermes-agent",
+          },
+        },
+        identities: {
+          nukoevi: {
+            active_evi: "evi-hermes-grok",
+          },
+        },
+      },
+      "nukoevi",
+      "evi-hermes-codex",
+    );
+    expect(
+      (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+    ).toBe("evi-hermes-codex");
   });
 });
 
@@ -655,6 +771,42 @@ describe("tmux send", () => {
           config,
         ]),
       ).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("send accepts an identity target and resolves the active processor", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-send-identity-test-"));
+    try {
+      const config = join(root, "config.json");
+      const eventLog = join(root, "events.jsonl");
+      writeFileSync(
+        config,
+        JSON.stringify({
+          memory: {
+            event_log: eventLog,
+          },
+          evis: {
+            "evi-hermes-grok": {
+              runtime: "hermes",
+              provider: "hermes-agent",
+              profile: "grok",
+            },
+          },
+          identities: {
+            nukoevi: {
+              active_evi: "evi-hermes-grok",
+            },
+          },
+        }),
+      );
+      expect(
+        main(["send", "nukoevi", "--text", "Search X", "--queue-only", "--config", config]),
+      ).toBe(0);
+      const [event] = readMemoryEvents(eventLog);
+      expect(event.target_evi).toBe("evi-hermes-grok");
+      expect(event.subject).toBe("nukoevi");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
