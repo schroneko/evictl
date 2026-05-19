@@ -2384,6 +2384,14 @@ function cmdIdentitySwitch(args: string[], label: "active" | "processor"): numbe
     statuses.push(statusFor(nextTarget));
   }
 
+  for (const [runtime, target] of Object.entries(inventory.targets)) {
+    if (runtime === result.nextRuntime || runtime === result.previousRuntime) continue;
+    if (!runtimeInUse(inventory, runtime)) {
+      stopTarget(target);
+      statuses.push(statusFor(target));
+    }
+  }
+
   console.log(`identity=${identityId} ${label}=${eviId}`);
   if (statuses.length > 0) printStatuses(statuses);
   return 0;
