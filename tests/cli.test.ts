@@ -31,6 +31,7 @@ import {
   resolveProvider,
   resolveTarget,
   runtimeEnvForEvi,
+  runtimeInUse,
   searchMemory,
   setIdentityConfig,
   setInterfaceConfig,
@@ -549,6 +550,42 @@ describe("identity routing", () => {
     expect(routes["telegram:claude-code-channels:telegram"].mode).toBe("primary");
     expect(result.previousRuntime).toBe("hermes-agent");
     expect(result.nextRuntime).toBe("claude-code-channels");
+  });
+
+  test("marks only active identity and primary route runtimes as in use", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-agent-nukoevi": {
+          runtime: "hermes-agent",
+          provider: "hermes-agent",
+        },
+        "evi-claude-code-channels-telegram": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+        },
+      },
+      identities: {
+        nukoevi: {
+          active_evi: "evi-claude-code-channels-telegram",
+        },
+      },
+      routes: {
+        "telegram:claude-code-channels:telegram": {
+          channel: "telegram",
+          account_id: "default",
+          target_evi: "evi-claude-code-channels-telegram",
+          mode: "primary",
+        },
+        "telegram:hermes-agent:nukoevi": {
+          channel: "telegram",
+          account_id: "default",
+          target_evi: "evi-hermes-agent-nukoevi",
+          mode: "standby",
+        },
+      },
+    });
+    expect(runtimeInUse(inventory, "claude-code-channels")).toBe(true);
+    expect(runtimeInUse(inventory, "hermes-agent")).toBe(false);
   });
 
   test("builds a Claude Code Channels launch plan from active interfaces", () => {

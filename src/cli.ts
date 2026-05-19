@@ -2347,7 +2347,7 @@ function cmdIdentityBind(args: string[]): number {
   return 0;
 }
 
-function runtimeInUse(inventory: Inventory, runtime: string): boolean {
+export function runtimeInUse(inventory: Inventory, runtime: string): boolean {
   if (!runtime) return false;
   for (const identity of Object.values(inventory.identities)) {
     const evi = inventory.evis[identity.activeEvi];
@@ -2361,36 +2361,48 @@ function runtimeInUse(inventory: Inventory, runtime: string): boolean {
   return false;
 }
 
+function startAndVerifyTarget(target: Target): TargetStatus {
+  bootstrap(target);
+  const status = statusFor(target);
+  if (!status.running) throw new Error(`runtime did not start: ${target.name}`);
+  return status;
+}
+
+function stopAndVerifyTarget(target: Target): TargetStatus {
+  stopTarget(target);
+  const status = statusFor(target);
+  if (status.running) throw new Error(`unused runtime still running after switch: ${target.name}`);
+  return status;
+}
+
+function reconcileRuntimeTargets(inventory: Inventory): TargetStatus[] {
+  const statuses: TargetStatus[] = [];
+  for (const [runtime, target] of Object.entries(inventory.targets)) {
+    if (runtimeInUse(inventory, runtime)) {
+      const status = statusFor(target);
+      statuses.push(status.running ? status : startAndVerifyTarget(target));
+      continue;
+    }
+    const status = statusFor(target);
+    statuses.push(status.running ? stopAndVerifyTarget(target) : status);
+  }
+  return statuses;
+}
+
 function cmdIdentitySwitch(args: string[], label: "active" | "processor"): number {
   const identityId = required(args[0], "identity switch requires an identity id");
   const eviId = required(args[1], "identity switch requires an evi id");
   const path = optionValue(args, "--config") ?? configPath();
   const result = switchIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
-  writeConfigData(path, result.data);
   const inventory = loadInventory(result.data);
-  const statuses: TargetStatus[] = [];
-
-  if (result.previousRuntime && result.previousRuntime !== result.nextRuntime) {
-    const previousTarget = inventory.targets[result.previousRuntime];
-    if (previousTarget && !runtimeInUse(inventory, result.previousRuntime)) {
-      stopTarget(previousTarget);
-      statuses.push(statusFor(previousTarget));
-    }
-  }
-
   const nextTarget = inventory.targets[result.nextRuntime];
-  if (nextTarget) {
-    bootstrap(nextTarget);
-    statuses.push(statusFor(nextTarget));
-  }
-
-  for (const [runtime, target] of Object.entries(inventory.targets)) {
-    if (runtime === result.nextRuntime || runtime === result.previousRuntime) continue;
-    if (!runtimeInUse(inventory, runtime)) {
-      stopTarget(target);
-      statuses.push(statusFor(target));
-    }
-  }
+  const statuses = nextTarget ? [startAndVerifyTarget(nextTarget)] : [];
+  statuses.push(
+    ...Object.entries(inventory.targets)
+      .filter(([runtime]) => runtime !== result.nextRuntime && !runtimeInUse(inventory, runtime))
+      .map(([, target]) => stopAndVerifyTarget(target)),
+  );
+  writeConfigData(path, result.data);
 
   console.log(`identity=${identityId} ${label}=${eviId}`);
   if (statuses.length > 0) printStatuses(statuses);
@@ -2819,23 +2831,12 @@ function cmdUse(args: string[]): number {
   return 0;
 }
 
-function ensureTargets(targets: Record<string, Target>): TargetStatus[] {
-  const nextStatuses: TargetStatus[] = [];
-  for (const target of Object.values(targets)) {
-    const status = statusFor(target);
-    if (!status.running) bootstrap(target);
-    nextStatuses.push(statusFor(target));
-  }
-  return nextStatuses;
-}
-
 function cmdMonitor(args: string[], options: GlobalOptions): number {
   const once = hasFlag(args, "--once");
   if (options.headless && !once) throw new Error("monitor --headless requires --once");
   const interval = numberOption(args, "--interval", 60);
-  const targets = loadTargets();
   const runOnce = () => {
-    const statuses = ensureTargets(targets);
+    const statuses = reconcileRuntimeTargets(loadInventory());
     printStatuses(statuses);
     try {
       const inventory = loadInventory();
