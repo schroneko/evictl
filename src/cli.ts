@@ -1411,6 +1411,7 @@ export function parseProcessPids(stdout: string, patterns: string[], currentPid 
       if (!/^\d+$/.test(pid)) return [];
       if (Number(pid) === currentPid) return [];
       if (/\bpgrep\b/.test(command) && command.includes("-af")) return [];
+      if (/\bgrep\b/.test(command)) return [];
       if (!regex.test(command)) return [];
       return [Number(pid)];
     });

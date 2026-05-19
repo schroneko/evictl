@@ -664,6 +664,7 @@ describe("process parsing", () => {
       [
         "10 pgrep -af openclaw|ai.openclaw.gateway",
         "20 /opt/homebrew/bin/bun ./dist/evictl doctor",
+        "25 grep -E openclaw|nukoevi-telegram",
         "30 claude --channels plugin:telegram@claude-plugins-official --name nukoevi-telegram",
       ].join("\n"),
       ["openclaw", "nukoevi-telegram"],
