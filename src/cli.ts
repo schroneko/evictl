@@ -129,6 +129,15 @@ export type ClaudeCodeChannelsLaunchPlan = {
   };
 };
 
+export type IdentityProcessorSwitchResult = {
+  data: Record<string, unknown>;
+  identityId: string;
+  previousEviId: string;
+  nextEviId: string;
+  previousRuntime: string;
+  nextRuntime: string;
+};
+
 export type DiscoverySource = {
   runtime: string;
   kind: string;
@@ -1133,6 +1142,99 @@ export function bindIdentityProcessorConfig(
       ...objectValue(data.identities),
       [identityId]: identityToConfig({ ...identity, activeEvi: eviId }),
     },
+  };
+}
+
+function interfaceRouteOwnerKey(binding: InterfaceBinding): string {
+  return `${binding.kind}\u0000${binding.address || "default"}\u0000-`;
+}
+
+function switchRouteKey(binding: InterfaceBinding, evi: Evi): string {
+  return `${binding.kind}:${evi.runtime}:${slug(evi.profile || evi.eviId)}`;
+}
+
+function uniqueRouteKey(routes: Record<string, Route>, preferred: string): string {
+  if (!routes[preferred]) return preferred;
+  let index = 2;
+  while (routes[`${preferred}-${index}`]) index += 1;
+  return `${preferred}-${index}`;
+}
+
+export function switchIdentityProcessorConfig(
+  data: Record<string, unknown>,
+  identityId: string,
+  eviId: string,
+): IdentityProcessorSwitchResult {
+  const inventory = loadInventory(data);
+  const identity = inventory.identities[identityId];
+  if (!identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
+  const nextEvi = inventory.evis[eviId];
+  if (!nextEvi) {
+    const known = Object.keys(inventory.evis).sort().join(", ");
+    throw new Error(`unknown evi: ${eviId} (known: ${known})`);
+  }
+  const previousEvi = identity.activeEvi ? inventory.evis[identity.activeEvi] : undefined;
+  const activeInterfaces = Object.values(inventory.interfaces).filter(
+    (binding) => binding.identityId === identityId && ["primary", "mirror"].includes(binding.mode),
+  );
+  const routes = structuredClone(inventory.routes);
+  const surfaces = new Set(activeInterfaces.map(interfaceRouteOwnerKey));
+  const promoted = new Set<string>();
+
+  for (const route of Object.values(routes)) {
+    const owner = routeOwnerKey(route);
+    if (!surfaces.has(owner)) continue;
+    if (route.targetEvi === identity.activeEvi && route.mode === "primary") route.mode = "standby";
+    if (route.targetEvi === eviId) {
+      if (!promoted.has(owner)) {
+        route.mode = "primary";
+        promoted.add(owner);
+      } else if (route.mode === "primary") {
+        route.mode = "standby";
+      }
+    }
+  }
+
+  for (const binding of activeInterfaces) {
+    const owner = interfaceRouteOwnerKey(binding);
+    if (promoted.has(owner)) continue;
+    const key = uniqueRouteKey(routes, switchRouteKey(binding, nextEvi));
+    routes[key] = {
+      key,
+      channel: binding.kind,
+      accountId: binding.address || "default",
+      peerId: "",
+      targetEvi: eviId,
+      mode: "primary",
+    };
+    promoted.add(owner);
+  }
+
+  const conflicts = duplicatePrimaryRoutes(routes);
+  if (conflicts.size > 0) {
+    for (const [owner, conflictRoutes] of conflicts) {
+      throw new Error(
+        `duplicate primary route ${ownerLabel(owner)}: ${conflictRoutes.map((item) => item.key).join(", ")}`,
+      );
+    }
+  }
+
+  const nextData = bindIdentityProcessorConfig(data, identityId, eviId);
+  return {
+    data: {
+      ...nextData,
+      routes: Object.fromEntries(
+        Object.entries(routes).map(([key, value]) => [key, routeToConfig(value)]),
+      ),
+    },
+    identityId,
+    previousEviId: identity.activeEvi,
+    nextEviId: eviId,
+    previousRuntime: previousEvi?.runtime ?? "",
+    nextRuntime: nextEvi.runtime,
   };
 }
 
@@ -2245,6 +2347,48 @@ function cmdIdentityBind(args: string[]): number {
   return 0;
 }
 
+function runtimeInUse(inventory: Inventory, runtime: string): boolean {
+  if (!runtime) return false;
+  for (const identity of Object.values(inventory.identities)) {
+    const evi = inventory.evis[identity.activeEvi];
+    if (evi?.runtime === runtime) return true;
+  }
+  for (const route of Object.values(inventory.routes)) {
+    if (!["primary", "mirror"].includes(route.mode)) continue;
+    const evi = inventory.evis[route.targetEvi];
+    if (evi?.runtime === runtime) return true;
+  }
+  return false;
+}
+
+function cmdIdentitySwitch(args: string[], label: "active" | "processor"): number {
+  const identityId = required(args[0], "identity switch requires an identity id");
+  const eviId = required(args[1], "identity switch requires an evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const result = switchIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
+  writeConfigData(path, result.data);
+  const inventory = loadInventory(result.data);
+  const statuses: TargetStatus[] = [];
+
+  if (result.previousRuntime && result.previousRuntime !== result.nextRuntime) {
+    const previousTarget = inventory.targets[result.previousRuntime];
+    if (previousTarget && !runtimeInUse(inventory, result.previousRuntime)) {
+      stopTarget(previousTarget);
+      statuses.push(statusFor(previousTarget));
+    }
+  }
+
+  const nextTarget = inventory.targets[result.nextRuntime];
+  if (nextTarget) {
+    bootstrap(nextTarget);
+    statuses.push(statusFor(nextTarget));
+  }
+
+  console.log(`identity=${identityId} ${label}=${eviId}`);
+  if (statuses.length > 0) printStatuses(statuses);
+  return 0;
+}
+
 function cmdProcessorList(): number {
   const inventory = loadInventory();
   const evis = Object.values(inventory.evis);
@@ -2815,12 +2959,14 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "identity" && args[0] === "show") return cmdIdentityShow(args.slice(1));
   if (command === "identity" && args[0] === "add") return cmdIdentityAdd(args.slice(1));
   if (command === "identity" && args[0] === "bind") return cmdIdentityBind(args.slice(1));
-  if (command === "identity" && args[0] === "switch") return cmdIdentityBind(args.slice(1));
+  if (command === "identity" && args[0] === "switch")
+    return cmdIdentitySwitch(args.slice(1), "active");
   if (command === "interface" && args[0] === "list") return cmdInterfaceList();
   if (command === "interface" && args[0] === "bind") return cmdInterfaceBind(args.slice(1));
   if (command === "processor" && args[0] === "list") return cmdProcessorList();
   if (command === "processor" && args[0] === "bind") return cmdProcessorBind(args.slice(1));
-  if (command === "processor" && args[0] === "switch") return cmdProcessorBind(args.slice(1));
+  if (command === "processor" && args[0] === "switch")
+    return cmdIdentitySwitch(args.slice(1), "processor");
   if (command === "processor" && args[0] === "launch-plan")
     return cmdProcessorLaunchPlan(args.slice(1));
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();

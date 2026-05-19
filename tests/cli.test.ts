@@ -37,6 +37,7 @@ import {
   setRouteConfig,
   setTargetConfig,
   spawnEviConfig,
+  switchIdentityProcessorConfig,
   syncNetworkMemory,
   tmuxCaptureCommand,
   tmuxSendCommands,
@@ -493,6 +494,61 @@ describe("identity routing", () => {
     expect(
       (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
     ).toBe("evi-hermes-agent-codex");
+  });
+
+  test("switches routes with an identity active processor", () => {
+    const result = switchIdentityProcessorConfig(
+      {
+        evis: {
+          "evi-hermes-agent-nukoevi": {
+            runtime: "hermes-agent",
+            provider: "hermes-agent",
+          },
+          "evi-claude-code-channels-telegram": {
+            runtime: "claude-code-channels",
+            provider: "claude-code-channels",
+            profile: "telegram",
+          },
+        },
+        identities: {
+          nukoevi: {
+            active_evi: "evi-hermes-agent-nukoevi",
+          },
+        },
+        interfaces: {
+          "telegram:main": {
+            kind: "telegram",
+            address: "default",
+            identity_id: "nukoevi",
+            mode: "primary",
+          },
+        },
+        routes: {
+          "telegram:hermes-agent:nukoevi": {
+            channel: "telegram",
+            account_id: "default",
+            target_evi: "evi-hermes-agent-nukoevi",
+            mode: "primary",
+          },
+          "telegram:claude-code-channels:telegram": {
+            channel: "telegram",
+            account_id: "default",
+            target_evi: "evi-claude-code-channels-telegram",
+            mode: "standby",
+          },
+        },
+      },
+      "nukoevi",
+      "evi-claude-code-channels-telegram",
+    );
+    const routes = result.data.routes as Record<string, Record<string, string>>;
+    expect(
+      (result.data.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+    ).toBe("evi-claude-code-channels-telegram");
+    expect(routes["telegram:hermes-agent:nukoevi"].mode).toBe("standby");
+    expect(routes["telegram:claude-code-channels:telegram"].mode).toBe("primary");
+    expect(result.previousRuntime).toBe("hermes-agent");
+    expect(result.nextRuntime).toBe("claude-code-channels");
   });
 
   test("builds a Claude Code Channels launch plan from active interfaces", () => {
