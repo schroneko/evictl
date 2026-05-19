@@ -588,6 +588,26 @@ describe("identity routing", () => {
     expect(runtimeInUse(inventory, "hermes-agent")).toBe(false);
   });
 
+  test("does not treat orphan primary routes as runtime usage", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-agent-hermes": {
+          runtime: "hermes-agent",
+          provider: "hermes-agent",
+        },
+      },
+      routes: {
+        "telegram:hermes-agent:hermes": {
+          channel: "telegram",
+          account_id: "default",
+          target_evi: "evi-hermes-agent-hermes",
+          mode: "primary",
+        },
+      },
+    });
+    expect(runtimeInUse(inventory, "hermes-agent")).toBe(false);
+  });
+
   test("builds a Claude Code Channels launch plan from active interfaces", () => {
     const inventory = loadInventory({
       evis: {

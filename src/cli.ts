@@ -2349,12 +2349,15 @@ function cmdIdentityBind(args: string[]): number {
 
 export function runtimeInUse(inventory: Inventory, runtime: string): boolean {
   if (!runtime) return false;
+  const activeEvis = new Set<string>();
   for (const identity of Object.values(inventory.identities)) {
+    if (identity.activeEvi) activeEvis.add(identity.activeEvi);
     const evi = inventory.evis[identity.activeEvi];
     if (evi?.runtime === runtime) return true;
   }
   for (const route of Object.values(inventory.routes)) {
     if (!["primary", "mirror"].includes(route.mode)) continue;
+    if (!activeEvis.has(route.targetEvi)) continue;
     const evi = inventory.evis[route.targetEvi];
     if (evi?.runtime === runtime) return true;
   }
