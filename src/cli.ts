@@ -1431,6 +1431,11 @@ function tmuxCapture(session: string, lines = 80): string {
   return result.code === 0 ? result.stdout : "";
 }
 
+export function targetHealthy(running: boolean, healthPatterns: string[], matchedPatterns: string[]): boolean {
+  if (healthPatterns.length === 0) return running;
+  return matchedPatterns.length > 0;
+}
+
 export function statusFor(target: Target): TargetStatus {
   const loaded = launchdLoaded(target.label);
   const state = launchdState(target.label);
@@ -1440,21 +1445,22 @@ export function statusFor(target: Target): TargetStatus {
   const plist = expandPath(target.plist);
   if (plist && !existsSync(plist)) notes.push("plist-missing");
   if (state) notes.push(`launchd:${state}`);
-  let healthy = pids.length > 0 || tmuxSessions.length > 0 || state === "running";
+  const matchedPatterns: string[] = [];
   for (const session of tmuxSessions) {
     const pane = tmuxCapture(session);
     for (const pattern of target.healthPatterns) {
       if (pane.includes(pattern)) {
         notes.push(`health:${pattern}`);
-        healthy = true;
+        matchedPatterns.push(pattern);
       }
     }
   }
+  const running = pids.length > 0 || tmuxSessions.length > 0 || state === "running";
   return {
     name: target.name,
     loaded,
-    running: pids.length > 0 || tmuxSessions.length > 0 || state === "running",
-    healthy,
+    running,
+    healthy: targetHealthy(running, target.healthPatterns, matchedPatterns),
     pids,
     tmuxSessions,
     notes,

@@ -39,6 +39,7 @@ import {
   setTargetConfig,
   spawnEviConfig,
   switchIdentityProcessorConfig,
+  targetHealthy,
   syncNetworkMemory,
   tmuxCaptureCommand,
   tmuxSendCommands,
@@ -85,6 +86,22 @@ describe("defaults", () => {
     expect(() => resolveTarget("ccc", DEFAULT_TARGETS)).toThrow("unknown target");
     expect(() => resolveTarget("hermes", DEFAULT_TARGETS)).toThrow("unknown target");
     expect(() => resolveProvider("open-claw")).toThrow("unknown provider");
+  });
+});
+
+describe("target health", () => {
+  test("uses running state when no health marker is configured", () => {
+    expect(targetHealthy(true, [], [])).toBe(true);
+    expect(targetHealthy(false, [], [])).toBe(false);
+  });
+
+  test("requires a matched health marker when configured", () => {
+    expect(targetHealthy(true, ["Listening for channel messages from:"], [])).toBe(false);
+    expect(
+      targetHealthy(true, ["Listening for channel messages from:"], [
+        "Listening for channel messages from:",
+      ]),
+    ).toBe(true);
   });
 });
 
