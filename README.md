@@ -206,9 +206,10 @@ state dir, agent id, session id, model provider, model, base URL, and runtime
 environment, but does not invent provider-specific setup commands.
 
 The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
-OpenClaw. Running runtimes are imported as `primary` routes; stopped runtimes are
-imported as `standby` routes so duplicate Telegram ownership stays visible and
-explicit.
+OpenClaw. Running runtimes are imported as `primary` routes. Stopped runtimes are
+kept as processor candidates through their evi entries, but are not imported as
+routes. Processor switching keeps only the selected active processor route, so
+old processors stay selectable without receiving channel traffic.
 
 `route set` refuses duplicate `primary` ownership for the same
 channel/account/peer unless `--force` is passed.

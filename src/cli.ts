@@ -764,14 +764,16 @@ function addHermesDiscovery(
     baseUrl: "",
     env: {},
   };
-  discovery.routes[`telegram:hermes-agent:${slug(profile)}`] = {
-    key: `telegram:hermes-agent:${slug(profile)}`,
-    channel: "telegram",
-    accountId: "default",
-    peerId: "",
-    targetEvi: eviId,
-    mode,
-  };
+  if (mode === "primary") {
+    discovery.routes[`telegram:hermes-agent:${slug(profile)}`] = {
+      key: `telegram:hermes-agent:${slug(profile)}`,
+      channel: "telegram",
+      accountId: "default",
+      peerId: "",
+      targetEvi: eviId,
+      mode,
+    };
+  }
   discovery.sources.push({
     runtime,
     kind: "launchd",
@@ -879,15 +881,17 @@ function addClaudeCodeChannelsDiscovery(
       identityId: profile,
       mode,
     };
-    const routeKey = `${plugin.plugin}:claude-code-channels:${slug(profile)}`;
-    discovery.routes[routeKey] = {
-      key: routeKey,
-      channel: plugin.plugin,
-      accountId: "default",
-      peerId: "",
-      targetEvi: eviId,
-      mode,
-    };
+    if (mode === "primary") {
+      const routeKey = `${plugin.plugin}:claude-code-channels:${slug(profile)}`;
+      discovery.routes[routeKey] = {
+        key: routeKey,
+        channel: plugin.plugin,
+        accountId: "default",
+        peerId: "",
+        targetEvi: eviId,
+        mode,
+      };
+    }
   }
   discovery.sources.push({
     runtime,
@@ -934,20 +938,23 @@ function addOpenClawDiscovery(
     baseUrl: "",
     env: {},
   };
-  discovery.routes[`telegram:openclaw:${slug(profile)}`] = {
-    key: `telegram:openclaw:${slug(profile)}`,
-    channel: "telegram",
-    accountId: "default",
-    peerId: "",
-    targetEvi: eviId,
-    mode: routeMode(runningByRuntime, "openclaw"),
-  };
+  const mode = routeMode(runningByRuntime, "openclaw");
+  if (mode === "primary") {
+    discovery.routes[`telegram:openclaw:${slug(profile)}`] = {
+      key: `telegram:openclaw:${slug(profile)}`,
+      channel: "telegram",
+      accountId: "default",
+      peerId: "",
+      targetEvi: eviId,
+      mode,
+    };
+  }
   discovery.sources.push({
     runtime: "openclaw",
     kind: "launchd",
     path: record.path,
     label: plistLabel(record.data),
-    status: routeMode(runningByRuntime, "openclaw"),
+    status: mode,
   });
 }
 
@@ -977,9 +984,9 @@ function classifyPlist(
 function demoteDuplicatePrimaryRoutes(discovery: Discovery): void {
   const conflicts = duplicatePrimaryRoutes(discovery.routes);
   for (const [owner, routes] of conflicts) {
-    for (const route of routes) route.mode = "standby";
+    for (const route of routes) delete discovery.routes[route.key];
     discovery.warnings.push(
-      `route conflict ${ownerLabel(owner)} imported as standby: ${routes.map((route) => route.key).join(", ")}`,
+      `route conflict ${ownerLabel(owner)} skipped: ${routes.map((route) => route.key).join(", ")}`,
     );
   }
 }
@@ -1209,17 +1216,18 @@ export function switchIdentityProcessorConfig(
   const surfaces = new Set(activeInterfaces.map(interfaceRouteOwnerKey));
   const promoted = new Set<string>();
 
-  for (const route of Object.values(routes)) {
+  for (const [key, route] of Object.entries(routes)) {
     const owner = routeOwnerKey(route);
     if (!surfaces.has(owner)) continue;
-    if (route.targetEvi === identity.activeEvi && route.mode === "primary") route.mode = "standby";
     if (route.targetEvi === eviId) {
       if (!promoted.has(owner)) {
         route.mode = "primary";
         promoted.add(owner);
-      } else if (route.mode === "primary") {
-        route.mode = "standby";
+      } else {
+        delete routes[key];
       }
+    } else {
+      delete routes[key];
     }
   }
 

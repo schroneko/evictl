@@ -224,8 +224,8 @@ primary owners of the same human-facing surface before peer-level routing is
 implemented.
 
 When discovery sees two active primary candidates for the same Telegram account,
-it demotes the whole conflicting group to `standby` and emits a warning. A human
-or later `route set` command must choose the owner explicitly.
+it skips the conflicting routes and emits a warning. A human or later
+`processor switch` or `route set` command must choose the owner explicitly.
 
 ## Shared memory event notes
 

@@ -534,7 +534,7 @@ describe("identity routing", () => {
     ).toBe("evi-hermes-agent-codex");
   });
 
-  test("switches routes with an identity active processor", () => {
+  test("keeps only the active processor route when switching an identity processor", () => {
     const result = switchIdentityProcessorConfig(
       {
         evis: {
@@ -583,7 +583,7 @@ describe("identity routing", () => {
     expect(
       (result.data.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
     ).toBe("evi-claude-code-channels-telegram");
-    expect(routes["telegram:hermes-agent:nukoevi"].mode).toBe("standby");
+    expect(routes["telegram:hermes-agent:nukoevi"]).toBeUndefined();
     expect(routes["telegram:claude-code-channels:telegram"].mode).toBe("primary");
     expect(result.previousRuntime).toBe("hermes-agent");
     expect(result.nextRuntime).toBe("claude-code-channels");
@@ -1064,7 +1064,7 @@ describe("discovery", () => {
         "claude-code-channels",
       );
       expect(discovery.interfaces["telegram:main"].identityId).toBe("default");
-      expect(discovery.routes["telegram:hermes-agent:nukoevi"].mode).toBe("standby");
+      expect(discovery.routes["telegram:hermes-agent:nukoevi"]).toBeUndefined();
       expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("primary");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1147,7 +1147,7 @@ describe("discovery", () => {
     }
   });
 
-  test("demotes duplicate primary routes during discovery", () => {
+  test("skips duplicate primary routes during discovery", () => {
     const root = mkdtempSync(join(tmpdir(), "evictl-conflict-discovery-test-"));
     try {
       const discovery = discoverFromPlistRecords(
@@ -1169,8 +1169,8 @@ describe("discovery", () => {
         ],
         { "claude-code-channels": true, "hermes-agent": true },
       );
-      expect(discovery.routes["telegram:hermes-agent:nukoevi"].mode).toBe("standby");
-      expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("standby");
+      expect(discovery.routes["telegram:hermes-agent:nukoevi"]).toBeUndefined();
+      expect(discovery.routes["telegram:claude-code-channels:default"]).toBeUndefined();
       expect(discovery.warnings.some((warning) => warning.includes("route conflict"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
