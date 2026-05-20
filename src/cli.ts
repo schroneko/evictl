@@ -22,6 +22,7 @@ export type Target = {
   tmuxSessions: string[];
   processPatterns: string[];
   healthPatterns: string[];
+  healthProcessPatterns?: string[];
 };
 
 export type TargetStatus = {
@@ -282,6 +283,7 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
       "claude-telegram-channel",
     ],
     healthPatterns: ["Listening for channel messages from:"],
+    healthProcessPatterns: ["claude-plugins-official/(telegram|discord|fakechat)"],
   },
 };
 
@@ -418,6 +420,10 @@ export function loadTargets(data = loadConfigData()): Record<string, Target> {
         base.processPatterns,
       ),
       healthPatterns: stringArray(raw.health_patterns ?? raw.healthPatterns, base.healthPatterns),
+      healthProcessPatterns: stringArray(
+        raw.health_process_patterns ?? raw.healthProcessPatterns,
+        base.healthProcessPatterns ?? [],
+      ),
     };
   }
   return targets;
@@ -1453,6 +1459,13 @@ export function statusFor(target: Target): TargetStatus {
         notes.push(`health:${pattern}`);
         matchedPatterns.push(pattern);
       }
+    }
+  }
+  for (const pattern of target.healthProcessPatterns ?? []) {
+    const healthPids = pidsFor([pattern]);
+    if (healthPids.length > 0) {
+      notes.push(`health-process:${pattern}`);
+      matchedPatterns.push(pattern);
     }
   }
   const running = pids.length > 0 || tmuxSessions.length > 0 || state === "running";

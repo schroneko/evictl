@@ -82,6 +82,12 @@ describe("defaults", () => {
     );
   });
 
+  test("Claude Code Channels has a durable channel process health marker", () => {
+    expect(DEFAULT_TARGETS["claude-code-channels"].healthProcessPatterns).toContain(
+      "claude-plugins-official/(telegram|discord|fakechat)",
+    );
+  });
+
   test("legacy fallback names are not accepted", () => {
     expect(() => resolveTarget("ccc", DEFAULT_TARGETS)).toThrow("unknown target");
     expect(() => resolveTarget("hermes", DEFAULT_TARGETS)).toThrow("unknown target");
