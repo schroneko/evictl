@@ -146,20 +146,23 @@ evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi --processor
 evictl interface bind telegram:main nukoevi --kind telegram --address main
 evictl interface bind discord:main nukoevi --kind discord --address main
 evictl interface bind mqtt:nukoevi/inbox nukoevi --kind mqtt --address nukoevi/inbox
-evictl processor switch nukoevi evi-hermes-agent-codex
+evictl processor list nukoevi
+evictl processor switch nukoevi hermes-agent
 evictl send nukoevi --text "Run from the active processor."
 ```
 
 Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an identity. The
 identity owns the persona and memory scope, then points at one active processor
-evi. Switching the processor changes the inner execution engine without changing
-the external interface bindings.
+instance. Switching the processor changes the inner execution engine without
+changing the external interface bindings. CLI commands accept processor aliases
+such as `claude-code-channels`, `hermes-agent`, and `openclaw`; internal evi ids
+remain visible only for disambiguation and config inspection.
 
 For Claude Code Channels, `processor launch-plan` renders the channel plugins
 from the identity's active interfaces:
 
 ```bash
-evictl processor switch nukoevi evi-claude-code-channels-nukoevi
+evictl processor switch nukoevi claude-code-channels
 evictl processor launch-plan nukoevi
 evictl processor launch-plan nukoevi --json
 ```

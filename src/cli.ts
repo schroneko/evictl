@@ -1156,7 +1156,7 @@ export function setIdentityConfig(
 export function bindIdentityProcessorConfig(
   data: Record<string, unknown>,
   identityId: string,
-  eviId: string,
+  processorSelector: string,
 ): Record<string, unknown> {
   const inventory = loadInventory(data);
   const identity = inventory.identities[identityId];
@@ -1164,15 +1164,12 @@ export function bindIdentityProcessorConfig(
     const known = Object.keys(inventory.identities).sort().join(", ");
     throw new Error(`unknown identity: ${identityId} (known: ${known})`);
   }
-  if (!inventory.evis[eviId]) {
-    const known = Object.keys(inventory.evis).sort().join(", ");
-    throw new Error(`unknown evi: ${eviId} (known: ${known})`);
-  }
+  const evi = resolveProcessorEvi(inventory, identityId, processorSelector);
   return {
     ...data,
     identities: {
       ...objectValue(data.identities),
-      [identityId]: identityToConfig({ ...identity, activeEvi: eviId }),
+      [identityId]: identityToConfig({ ...identity, activeEvi: evi.eviId }),
     },
   };
 }
@@ -1192,10 +1189,72 @@ function uniqueRouteKey(routes: Record<string, Route>, preferred: string): strin
   return `${preferred}-${index}`;
 }
 
+function processorSelectorValues(evi: Evi): string[] {
+  return [
+    evi.eviId,
+    evi.eviId.replace(/^evi-/, ""),
+    evi.provider,
+    evi.runtime,
+    evi.profile,
+    `${evi.provider}:${evi.profile}`,
+    `${evi.runtime}:${evi.profile}`,
+    evi.agentId,
+    evi.sessionId,
+  ].filter(Boolean);
+}
+
+function processorIdentityScore(evi: Evi, identity: Identity): number {
+  const identityValues = new Set(
+    [identity.identityId, identity.profile, identity.memoryScope].filter(Boolean),
+  );
+  if (evi.eviId === identity.activeEvi) return 100;
+  if (identityValues.has(evi.profile)) return 80;
+  if ([evi.agentId, evi.sessionId, evi.workspace, evi.stateDir].some((value) =>
+    [...identityValues].some((identityValue) => value.includes(identityValue)),
+  ))
+    return 60;
+  return 0;
+}
+
+function processorLabel(evi: Evi): string {
+  return `${evi.provider}:${evi.profile || "default"} (${evi.eviId})`;
+}
+
+export function resolveProcessorEvi(
+  inventory: Inventory,
+  identityId: string,
+  selector: string,
+): Evi {
+  if (inventory.evis[selector]) return inventory.evis[selector];
+  const identity = inventory.identities[identityId];
+  if (!identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
+  const needle = selector.toLowerCase();
+  const matches = Object.values(inventory.evis).filter((evi) =>
+    processorSelectorValues(evi).some((value) => value.toLowerCase() === needle),
+  );
+  if (matches.length === 0) {
+    const known = Object.values(inventory.evis).map(processorLabel).sort().join(", ");
+    throw new Error(`unknown processor: ${selector} (known: ${known})`);
+  }
+  const ranked = matches
+    .map((evi) => ({ evi, score: processorIdentityScore(evi, identity) }))
+    .sort((a, b) => b.score - a.score || a.evi.eviId.localeCompare(b.evi.eviId));
+  const bestScore = ranked[0]?.score ?? 0;
+  const best = ranked.filter((item) => item.score === bestScore).map((item) => item.evi);
+  if (best.length === 1) return best[0];
+  if (matches.length === 1) return matches[0];
+  throw new Error(
+    `ambiguous processor: ${selector} (matches: ${matches.map(processorLabel).sort().join(", ")})`,
+  );
+}
+
 export function switchIdentityProcessorConfig(
   data: Record<string, unknown>,
   identityId: string,
-  eviId: string,
+  processorSelector: string,
 ): IdentityProcessorSwitchResult {
   const inventory = loadInventory(data);
   const identity = inventory.identities[identityId];
@@ -1203,11 +1262,8 @@ export function switchIdentityProcessorConfig(
     const known = Object.keys(inventory.identities).sort().join(", ");
     throw new Error(`unknown identity: ${identityId} (known: ${known})`);
   }
-  const nextEvi = inventory.evis[eviId];
-  if (!nextEvi) {
-    const known = Object.keys(inventory.evis).sort().join(", ");
-    throw new Error(`unknown evi: ${eviId} (known: ${known})`);
-  }
+  const nextEvi = resolveProcessorEvi(inventory, identityId, processorSelector);
+  const eviId = nextEvi.eviId;
   const previousEvi = identity.activeEvi ? inventory.evis[identity.activeEvi] : undefined;
   const activeInterfaces = Object.values(inventory.interfaces).filter(
     (binding) => binding.identityId === identityId && ["primary", "mirror"].includes(binding.mode),
@@ -2365,21 +2421,24 @@ function cmdIdentityShow(args: string[]): number {
 function cmdIdentityAdd(args: string[]): number {
   const identityId = required(args[0], "identity add requires an identity id");
   const path = optionValue(args, "--config") ?? configPath();
+  const processor =
+    optionValue(args, "--processor") ??
+    optionValue(args, "--active-evi") ??
+    optionValue(args, "--active-processor") ??
+    "";
   const identity: Identity = {
     identityId,
     profile: optionValue(args, "--profile") ?? identityId,
     memoryScope: optionValue(args, "--memory-scope") ?? optionValue(args, "--memory") ?? identityId,
-    activeEvi:
-      optionValue(args, "--processor") ??
-      optionValue(args, "--active-evi") ??
-      optionValue(args, "--active-processor") ??
-      "",
+    activeEvi: "",
     description: optionValue(args, "--description") ?? "",
   };
-  const next = setIdentityConfig(loadConfigData(path), identity, hasFlag(args, "--force"));
+  let next = setIdentityConfig(loadConfigData(path), identity, hasFlag(args, "--force"));
+  if (processor) next = bindIdentityProcessorConfig(next, identityId, processor);
+  const inventory = loadInventory(next);
   writeConfigData(path, next);
   console.log(
-    `identity=${identity.identityId} profile=${identity.profile} memory=${identity.memoryScope || "-"} active=${identity.activeEvi || "-"}`,
+    `identity=${identity.identityId} profile=${identity.profile} memory=${identity.memoryScope || "-"} active=${inventory.identities[identityId].activeEvi || "-"}`,
   );
   return 0;
 }
@@ -2441,9 +2500,9 @@ function reconcileRuntimeTargets(inventory: Inventory): TargetStatus[] {
 
 function cmdIdentitySwitch(args: string[], label: "active" | "processor"): number {
   const identityId = required(args[0], "identity switch requires an identity id");
-  const eviId = required(args[1], "identity switch requires an evi id");
+  const processor = required(args[1], "identity switch requires a processor");
   const path = optionValue(args, "--config") ?? configPath();
-  const result = switchIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
+  const result = switchIdentityProcessorConfig(loadConfigData(path), identityId, processor);
   const inventory = loadInventory(result.data);
   const nextTarget = inventory.targets[result.nextRuntime];
   const statuses = nextTarget ? [startAndVerifyTarget(nextTarget)] : [];
@@ -2454,15 +2513,25 @@ function cmdIdentitySwitch(args: string[], label: "active" | "processor"): numbe
   );
   writeConfigData(path, result.data);
 
-  console.log(`identity=${identityId} ${label}=${eviId}`);
+  console.log(`identity=${identityId} ${label}=${result.nextRuntime} id=${result.nextEviId}`);
   if (statuses.length > 0) printStatuses(statuses);
   return 0;
 }
 
-function cmdProcessorList(): number {
+function cmdProcessorList(args: string[] = []): number {
   const inventory = loadInventory();
+  const identityId = args[0] && !args[0].startsWith("--") ? args[0] : "";
+  const identity = identityId ? inventory.identities[identityId] : undefined;
+  if (identityId && !identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
   const evis = Object.values(inventory.evis);
-  const width = Math.max(...evis.map((evi) => evi.eviId.length));
+  const providerCounts = evis.reduce<Record<string, number>>((counts, evi) => {
+    counts[evi.provider] = (counts[evi.provider] ?? 0) + 1;
+    return counts;
+  }, {});
+  const width = Math.max(...evis.map((evi) => evi.provider.length));
   for (const evi of evis.sort((a, b) => a.eviId.localeCompare(b.eviId))) {
     const identities =
       Object.values(inventory.identities)
@@ -2470,8 +2539,11 @@ function cmdProcessorList(): number {
         .map((identity) => identity.identityId)
         .sort()
         .join(",") || "-";
+    const selector = providerCounts[evi.provider] === 1 ? evi.provider : `${evi.provider}:${evi.profile || "default"}`;
+    const active = identity?.activeEvi === evi.eviId ? "yes" : "no";
+    const activePart = identity ? `  active=${active}` : "";
     console.log(
-      `${evi.eviId.padEnd(width)}  provider=${evi.provider}  runtime=${evi.runtime}  profile=${evi.profile}  identities=${identities}`,
+      `${evi.provider.padEnd(width)}  selector=${selector}  profile=${evi.profile}  identities=${identities}${activePart}  id=${evi.eviId}`,
     );
   }
   return 0;
@@ -2479,11 +2551,12 @@ function cmdProcessorList(): number {
 
 function cmdProcessorBind(args: string[]): number {
   const identityId = required(args[0], "processor bind requires an identity id");
-  const eviId = required(args[1], "processor bind requires an evi id");
+  const processor = required(args[1], "processor bind requires a processor");
   const path = optionValue(args, "--config") ?? configPath();
-  const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
+  const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, processor);
+  const inventory = loadInventory(next);
   writeConfigData(path, next);
-  console.log(`identity=${identityId} processor=${eviId}`);
+  console.log(`identity=${identityId} processor=${inventory.identities[identityId].activeEvi}`);
   return 0;
 }
 
@@ -2984,14 +3057,14 @@ Commands:
   evi stop <evi>
   identity list
   identity show <identity>
-  identity add <identity> [--profile <profile>] [--memory-scope <scope>] [--processor <evi>] [--description <text>] [--force]
-  identity bind <identity> <evi>
-  identity switch <identity> <evi>
+  identity add <identity> [--profile <profile>] [--memory-scope <scope>] [--processor <processor>] [--description <text>] [--force]
+  identity bind <identity> <processor>
+  identity switch <identity> <processor>
   interface list
   interface bind <key> <identity> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
-  processor list
-  processor bind <identity> <evi>
-  processor switch <identity> <evi>
+  processor list [identity]
+  processor bind <identity> <processor>
+  processor switch <identity> <processor>
   processor launch-plan <identity> [--json]
   spawn <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   start <target>
@@ -3057,7 +3130,7 @@ export function main(argv = process.argv.slice(2)): number {
     return cmdIdentitySwitch(args.slice(1), "active");
   if (command === "interface" && args[0] === "list") return cmdInterfaceList();
   if (command === "interface" && args[0] === "bind") return cmdInterfaceBind(args.slice(1));
-  if (command === "processor" && args[0] === "list") return cmdProcessorList();
+  if (command === "processor" && args[0] === "list") return cmdProcessorList(args.slice(1));
   if (command === "processor" && args[0] === "bind") return cmdProcessorBind(args.slice(1));
   if (command === "processor" && args[0] === "switch")
     return cmdIdentitySwitch(args.slice(1), "processor");

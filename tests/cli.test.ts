@@ -27,6 +27,7 @@ import {
   promoteMemoryEvents,
   queueTaskEvent,
   readMemoryEvents,
+  resolveProcessorEvi,
   resolveEviTarget,
   resolveProcessorTarget,
   resolveProvider,
@@ -532,6 +533,72 @@ describe("identity routing", () => {
     expect(
       (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
     ).toBe("evi-hermes-agent-codex");
+  });
+
+  test("resolves processor aliases for an identity", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-agent": {
+          runtime: "hermes-agent",
+          provider: "hermes-agent",
+          profile: "default",
+        },
+        "evi-hermes-agent-nukoevi": {
+          runtime: "hermes-agent",
+          provider: "hermes-agent",
+          profile: "nukoevi",
+        },
+        "evi-claude-code-channels-telegram": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+          profile: "telegram",
+          agent_id: "nukoevi-telegram",
+        },
+      },
+      identities: {
+        nukoevi: {
+          profile: "nukoevi",
+          active_evi: "evi-hermes-agent-nukoevi",
+        },
+      },
+    });
+    expect(resolveProcessorEvi(inventory, "nukoevi", "hermes-agent").eviId).toBe(
+      "evi-hermes-agent-nukoevi",
+    );
+    expect(resolveProcessorEvi(inventory, "nukoevi", "claude-code-channels").eviId).toBe(
+      "evi-claude-code-channels-telegram",
+    );
+  });
+
+  test("switches an identity processor by provider alias", () => {
+    const next = bindIdentityProcessorConfig(
+      {
+        evis: {
+          "evi-hermes-agent-nukoevi": {
+            runtime: "hermes-agent",
+            provider: "hermes-agent",
+            profile: "nukoevi",
+          },
+          "evi-claude-code-channels-telegram": {
+            runtime: "claude-code-channels",
+            provider: "claude-code-channels",
+            profile: "telegram",
+            agent_id: "nukoevi-telegram",
+          },
+        },
+        identities: {
+          nukoevi: {
+            profile: "nukoevi",
+            active_evi: "evi-hermes-agent-nukoevi",
+          },
+        },
+      },
+      "nukoevi",
+      "claude-code-channels",
+    );
+    expect(
+      (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+    ).toBe("evi-claude-code-channels-telegram");
   });
 
   test("keeps only the active processor route when switching an identity processor", () => {
