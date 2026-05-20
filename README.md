@@ -73,11 +73,12 @@ evictl --help
 The repository includes an Agent Skill at `skills/evictl`.
 
 Install or vendor it with your agent skill manager, then invoke it when managing
-local evi instances, routes, runtime handoff, or shared memory with `evictl`.
+local characters, engine handoff, routes, or shared memory with `evictl`.
 
 ## Quick Start
 
-These are the commands a first-time user should copy and adjust:
+These are the commands a first-time user should copy and adjust. Replace `demo`
+with the character name they want to control.
 
 ```bash
 evictl create demo
@@ -90,6 +91,18 @@ evictl status
 
 The character name is the outside personality. The engine is the inside that
 answers for it.
+
+What the setup commands do:
+
+- `evictl create demo` creates the character record.
+- `evictl import --dry-run` shows local engines that can be registered.
+- `evictl import` writes those local engines into `~/.config/evictl/config.json`.
+- `evictl engine list --character demo` shows which engines are available.
+- `evictl switch --character demo --engine claude-code-channels` changes the inner engine.
+- `evictl status` shows what is running.
+
+`import` only reads local setup on this Mac. It does not download anything and
+does not create a remote account.
 
 ```bash
 evictl switch --character demo --engine hermes-agent
@@ -104,6 +117,23 @@ evictl switch --character demo --engine claude-code-channels --deployment telegr
 ```
 
 Every setup step is explicit and repeatable. Commands never stop to ask questions.
+
+## Daily Use
+
+After setup, most users only need these commands:
+
+```bash
+evictl engine list --character demo
+evictl switch --character demo --engine claude-code-channels
+evictl switch --character demo --engine hermes-agent
+evictl status
+```
+
+To send a task to the current engine behind the character:
+
+```bash
+evictl send demo --text "Run the check suite."
+```
 
 ## Commands
 
@@ -160,8 +190,8 @@ evictl inspect
 
 ## Configuration
 
-`evictl` keeps its own inventory of runtime adapters, evi identities, routes, and
-memory sync state. Override defaults with:
+`evictl` keeps its own inventory of characters, engine deployments, routes, and
+memory sync state. The default config file is:
 
 ```bash
 ~/.config/evictl/config.json
@@ -418,7 +448,7 @@ Example:
 ## Safety Model
 
 `evictl` prevents accidental duplicate ownership of the same human-facing
-channel, account, peer, or session. Multiple evi instances are allowed, but
+channel, account, peer, or session. Multiple engine deployments are allowed, but
 fanout and mirror routes must be explicit.
 
 Shared memory is compiled from provenance-rich events instead of blindly copying

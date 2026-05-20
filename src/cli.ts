@@ -3186,15 +3186,23 @@ Global options:
 
 Common commands:
   create <character> [--memory-scope <scope>] [--description <text>] [--force]
+      Create a character record.
   switch --character <character> --engine <engine> [--deployment <name>]
+      Change which engine answers for a character.
   engine list --character <character> [--json]
-  status [target]
-  send <character-or-engine> --text <text> [--queue-only]
+      Show engines that can answer for a character.
+  status [engine]
+      Show running engine status.
+  send <character> --text <text> [--queue-only]
+      Send a task to a character.
 
 Setup commands:
   discover [--json]
+      Show local engines that evictl can import.
   import [--dry-run] [--json] [--config <path>]
+      Register local engine setup into evictl config.
   interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
+      Connect a channel such as Telegram to a character.
 
 Advanced commands:
   ps
