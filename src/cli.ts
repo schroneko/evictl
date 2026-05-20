@@ -1189,61 +1189,48 @@ function uniqueRouteKey(routes: Record<string, Route>, preferred: string): strin
   return `${preferred}-${index}`;
 }
 
-function processorSelectorValues(evi: Evi): string[] {
-  return [
-    evi.eviId,
-    evi.eviId.replace(/^evi-/, ""),
-    evi.provider,
-    evi.runtime,
-    evi.profile,
-    `${evi.provider}:${evi.profile}`,
-    `${evi.runtime}:${evi.profile}`,
-    evi.agentId,
-    evi.sessionId,
-  ].filter(Boolean);
-}
-
-function processorIdentityScore(evi: Evi, identity: Identity): number {
-  const identityValues = new Set(
-    [identity.identityId, identity.profile, identity.memoryScope].filter(Boolean),
-  );
-  if (evi.eviId === identity.activeEvi) return 100;
-  if (identityValues.has(evi.profile)) return 80;
-  if ([evi.agentId, evi.sessionId, evi.workspace, evi.stateDir].some((value) =>
-    [...identityValues].some((identityValue) => value.includes(identityValue)),
-  ))
-    return 60;
-  return 0;
-}
-
 function processorLabel(evi: Evi): string {
   return `${evi.provider}:${evi.profile || "default"} (${evi.eviId})`;
 }
 
-function positionalArgs(args: string[]): string[] {
-  const values: string[] = [];
+function hasExtraPositionalProcessor(args: string[]): boolean {
+  let positional = 0;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg.startsWith("--")) {
       if (VALUE_OPTIONS.has(arg)) index += 1;
       continue;
     }
-    values.push(arg);
+    positional += 1;
+    if (positional > 1) return true;
   }
-  return values;
+  return false;
+}
+
+function hasLegacyProcessorSelector(args: string[]): boolean {
+  return ["--processor", "--active-evi", "--active-processor"].some((option) =>
+    args.includes(option),
+  );
 }
 
 export function processorSelectorFromArgs(args: string[], commandName: string): string {
+  if (hasLegacyProcessorSelector(args)) {
+    throw new Error(
+      `${commandName} requires explicit processor selection with --provider <provider> or --id <evi>`,
+    );
+  }
+  if (hasExtraPositionalProcessor(args)) {
+    throw new Error(
+      `${commandName} requires explicit processor selection with --provider <provider> or --id <evi>`,
+    );
+  }
   const id = optionValue(args, "--id");
-  if (id) return id;
-  const provider = optionValue(args, "--provider") ?? optionValue(args, "--processor") ?? "";
+  if (id) return `id:${id}`;
+  const provider = optionValue(args, "--provider") ?? "";
   const profile = optionValue(args, "--profile") ?? "";
   if (provider && profile) return `${provider}:${profile}`;
   if (provider) return provider;
-  if (profile) return profile;
-  const processor = positionalArgs(args)[1] ?? "";
-  if (processor) return processor;
-  throw new Error(`${commandName} requires a processor, --provider <provider>, or --id <evi>`);
+  throw new Error(`${commandName} requires --provider <provider> or --id <evi>`);
 }
 
 export function resolveProcessorEvi(
@@ -1251,29 +1238,31 @@ export function resolveProcessorEvi(
   identityId: string,
   selector: string,
 ): Evi {
-  if (inventory.evis[selector]) return inventory.evis[selector];
   const identity = inventory.identities[identityId];
   if (!identity) {
     const known = Object.keys(inventory.identities).sort().join(", ");
     throw new Error(`unknown identity: ${identityId} (known: ${known})`);
   }
-  const needle = selector.toLowerCase();
-  const matches = Object.values(inventory.evis).filter((evi) =>
-    processorSelectorValues(evi).some((value) => value.toLowerCase() === needle),
-  );
+  if (selector.startsWith("id:")) {
+    const id = selector.slice("id:".length);
+    const evi = inventory.evis[id];
+    if (evi) return evi;
+    const known = Object.values(inventory.evis).map(processorLabel).sort().join(", ");
+    throw new Error(`unknown processor id: ${id} (known: ${known})`);
+  }
+  const [provider, profile] = selector.split(":", 2);
+  const matches = Object.values(inventory.evis).filter((evi) => {
+    if (evi.provider !== provider) return false;
+    if (profile && evi.profile !== profile) return false;
+    return true;
+  });
   if (matches.length === 0) {
     const known = Object.values(inventory.evis).map(processorLabel).sort().join(", ");
     throw new Error(`unknown processor: ${selector} (known: ${known})`);
   }
-  const ranked = matches
-    .map((evi) => ({ evi, score: processorIdentityScore(evi, identity) }))
-    .sort((a, b) => b.score - a.score || a.evi.eviId.localeCompare(b.evi.eviId));
-  const bestScore = ranked[0]?.score ?? 0;
-  const best = ranked.filter((item) => item.score === bestScore).map((item) => item.evi);
-  if (best.length === 1) return best[0];
   if (matches.length === 1) return matches[0];
   throw new Error(
-    `ambiguous processor: ${selector} (matches: ${matches.map(processorLabel).sort().join(", ")})`,
+    `ambiguous processor provider: ${selector} (use --profile or --id; matches: ${matches.map(processorLabel).sort().join(", ")})`,
   );
 }
 
@@ -1337,7 +1326,7 @@ export function switchIdentityProcessorConfig(
     }
   }
 
-  const nextData = bindIdentityProcessorConfig(data, identityId, eviId);
+  const nextData = bindIdentityProcessorConfig(data, identityId, `id:${eviId}`);
   return {
     data: {
       ...nextData,
@@ -2288,11 +2277,6 @@ function cmdPs(): number {
   return 0;
 }
 
-function cmdSpawn(args: string[]): number {
-  const runtimeArg = required(args[0], "spawn requires a runtime/provider");
-  return addEviFromArgs(runtimeArg, args.slice(1));
-}
-
 function addEviFromArgs(providerArg: string, args: string[]): number {
   const path = optionValue(args, "--config") ?? configPath();
   const data = loadConfigData(path);
@@ -2447,11 +2431,15 @@ function cmdIdentityShow(args: string[]): number {
 function cmdIdentityAdd(args: string[]): number {
   const identityId = required(args[0], "identity add requires an identity id");
   const path = optionValue(args, "--config") ?? configPath();
-  const processor =
-    optionValue(args, "--processor") ??
-    optionValue(args, "--active-evi") ??
-    optionValue(args, "--active-processor") ??
-    "";
+  if (
+    hasLegacyProcessorSelector(args) ||
+    optionValue(args, "--provider") ||
+    optionValue(args, "--id")
+  ) {
+    throw new Error(
+      "identity add does not bind processors; run processor bind <identity> --provider <provider> [--profile <profile>] or processor bind <identity> --id <evi>",
+    );
+  }
   const identity: Identity = {
     identityId,
     profile: optionValue(args, "--profile") ?? identityId,
@@ -2459,8 +2447,7 @@ function cmdIdentityAdd(args: string[]): number {
     activeEvi: "",
     description: optionValue(args, "--description") ?? "",
   };
-  let next = setIdentityConfig(loadConfigData(path), identity, hasFlag(args, "--force"));
-  if (processor) next = bindIdentityProcessorConfig(next, identityId, processor);
+  const next = setIdentityConfig(loadConfigData(path), identity, hasFlag(args, "--force"));
   const inventory = loadInventory(next);
   writeConfigData(path, next);
   console.log(
@@ -2471,11 +2458,12 @@ function cmdIdentityAdd(args: string[]): number {
 
 function cmdIdentityBind(args: string[]): number {
   const identityId = required(args[0], "identity bind requires an identity id");
-  const eviId = required(args[1], "identity bind requires an evi id");
+  const processor = processorSelectorFromArgs(args, "identity bind");
   const path = optionValue(args, "--config") ?? configPath();
-  const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, eviId);
+  const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, processor);
+  const inventory = loadInventory(next);
   writeConfigData(path, next);
-  console.log(`identity=${identityId} active=${eviId}`);
+  console.log(`identity=${identityId} active=${inventory.identities[identityId].activeEvi}`);
   return 0;
 }
 
@@ -3102,16 +3090,19 @@ Commands:
   evi stop <evi>
   identity list
   identity show <identity>
-  identity add <identity> [--profile <profile>] [--memory-scope <scope>] [--processor <processor>] [--description <text>] [--force]
-  identity bind <identity> <processor>
-  identity switch <identity> <processor>
+  identity add <identity> [--profile <profile>] [--memory-scope <scope>] [--description <text>] [--force]
+  identity bind <identity> --provider <provider> [--profile <profile>]
+  identity bind <identity> --id <evi>
+  identity switch <identity> --provider <provider> [--profile <profile>]
+  identity switch <identity> --id <evi>
   interface list
   interface bind <key> <identity> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
   processor list [identity] [--json]
-  processor bind <identity> [processor] [--provider <provider>] [--profile <profile>] [--id <evi>]
-  processor switch <identity> [processor] [--provider <provider>] [--profile <profile>] [--id <evi>]
+  processor bind <identity> --provider <provider> [--profile <profile>]
+  processor bind <identity> --id <evi>
+  processor switch <identity> --provider <provider> [--profile <profile>]
+  processor switch <identity> --id <evi>
   processor launch-plan <identity> [--json]
-  spawn <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   start <target>
   stop <target>
   stop-all
@@ -3126,7 +3117,6 @@ Commands:
   memory promote [--limit <n>]
   memory search <query> [--limit <n>] [--json]
   memory export [--json]
-  memory import
   memory sync
   sync [--limit <n>]
   send <evi-or-identity> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
@@ -3143,7 +3133,6 @@ export function main(argv = process.argv.slice(2)): number {
     import: cmdImport,
     status: cmdStatus,
     targets: () => cmdTargets(),
-    spawn: cmdSpawn,
     start: cmdStart,
     stop: cmdStop,
     "stop-all": () => cmdStopAll(),
@@ -3186,7 +3175,6 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "memory" && args[0] === "promote") return cmdMemoryPromote(args.slice(1));
   if (command === "memory" && args[0] === "search") return cmdMemorySearch(args.slice(1));
   if (command === "memory" && args[0] === "export") return cmdMemoryExport(args.slice(1));
-  if (command === "memory" && args[0] === "import") return cmdMemorySync(args.slice(1));
   if (command === "memory" && args[0] === "sync") return cmdMemorySync(args.slice(1));
   const handler = commands[command];
   if (!handler) throw new Error(`unknown command: ${command}`);

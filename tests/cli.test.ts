@@ -96,6 +96,11 @@ describe("defaults", () => {
     expect(() => resolveTarget("hermes", DEFAULT_TARGETS)).toThrow("unknown target");
     expect(() => resolveProvider("open-claw")).toThrow("unknown provider");
   });
+
+  test("removed command aliases are not accepted", () => {
+    expect(() => main(["spawn", "hermes-agent"])).toThrow("unknown command: spawn");
+    expect(() => main(["memory", "import"])).toThrow("unknown command: memory");
+  });
 });
 
 describe("target health", () => {
@@ -529,14 +534,14 @@ describe("identity routing", () => {
         },
       },
       "nukoevi",
-      "evi-hermes-agent-codex",
+      "id:evi-hermes-agent-codex",
     );
     expect(
       (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
     ).toBe("evi-hermes-agent-codex");
   });
 
-  test("resolves processor aliases for an identity", () => {
+  test("requires explicit processor provider profiles or ids", () => {
     const inventory = loadInventory({
       evis: {
         "evi-hermes-agent": {
@@ -563,10 +568,16 @@ describe("identity routing", () => {
         },
       },
     });
-    expect(resolveProcessorEvi(inventory, "nukoevi", "hermes-agent").eviId).toBe(
+    expect(() => resolveProcessorEvi(inventory, "nukoevi", "hermes-agent")).toThrow(
+      "ambiguous processor provider",
+    );
+    expect(resolveProcessorEvi(inventory, "nukoevi", "hermes-agent:nukoevi").eviId).toBe(
       "evi-hermes-agent-nukoevi",
     );
-    expect(resolveProcessorEvi(inventory, "nukoevi", "claude-code-channels").eviId).toBe(
+    expect(resolveProcessorEvi(inventory, "nukoevi", "claude-code-channels:telegram").eviId).toBe(
+      "evi-claude-code-channels-telegram",
+    );
+    expect(resolveProcessorEvi(inventory, "nukoevi", "id:evi-claude-code-channels-telegram").eviId).toBe(
       "evi-claude-code-channels-telegram",
     );
   });
@@ -581,12 +592,16 @@ describe("identity routing", () => {
         "switch",
       ),
     ).toBe("hermes-agent:nukoevi");
-    expect(processorSelectorFromArgs(["nukoevi", "--id", "evi-openclaw"], "switch")).toBe(
-      "evi-openclaw",
+    expect(processorSelectorFromArgs(["nukoevi", "--id", "evi-openclaw"], "switch")).toBe("id:evi-openclaw");
+    expect(() => processorSelectorFromArgs(["nukoevi", "claude-code-channels"], "switch")).toThrow(
+      "requires explicit processor selection",
+    );
+    expect(() => processorSelectorFromArgs(["nukoevi", "--processor", "claude-code-channels"], "switch")).toThrow(
+      "requires explicit processor selection",
     );
   });
 
-  test("switches an identity processor by provider alias", () => {
+  test("switches an identity processor by explicit provider profile", () => {
     const next = bindIdentityProcessorConfig(
       {
         evis: {
@@ -610,7 +625,7 @@ describe("identity routing", () => {
         },
       },
       "nukoevi",
-      "claude-code-channels",
+      "claude-code-channels:telegram",
     );
     expect(
       (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
@@ -660,7 +675,7 @@ describe("identity routing", () => {
         },
       },
       "nukoevi",
-      "evi-claude-code-channels-telegram",
+      "id:evi-claude-code-channels-telegram",
     );
     const routes = result.data.routes as Record<string, Record<string, string>>;
     expect(

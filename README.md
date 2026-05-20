@@ -97,7 +97,6 @@ evictl interface bind
 evictl processor list
 evictl processor switch
 evictl processor launch-plan
-evictl spawn
 evictl monitor
 evictl stop
 evictl tail
@@ -107,7 +106,6 @@ evictl memory status
 evictl memory promote
 evictl memory search
 evictl memory export
-evictl memory import
 evictl memory sync
 evictl sync
 evictl send
@@ -142,13 +140,14 @@ evictl route set telegram:main --target evi-claude-code-channels-nukoevi --accou
 Manage swappable interfaces and processors through an identity:
 
 ```bash
-evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi --processor evi-hermes-agent-grok
+evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi
 evictl interface bind telegram:main nukoevi --kind telegram --address main
 evictl interface bind discord:main nukoevi --kind discord --address main
 evictl interface bind mqtt:nukoevi/inbox nukoevi --kind mqtt --address nukoevi/inbox
+evictl processor bind nukoevi --id evi-hermes-agent-grok
 evictl processor list nukoevi
 evictl processor list nukoevi --json
-evictl processor switch nukoevi --provider hermes-agent
+evictl processor switch nukoevi --provider hermes-agent --profile nukoevi
 evictl send nukoevi --text "Run from the active processor."
 ```
 
@@ -156,16 +155,16 @@ Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an identity. The
 identity owns the persona and memory scope, then points at one active processor
 instance. Switching the processor changes the inner execution engine without
 changing the external interface bindings. CLI commands accept explicit processor
-options such as `--provider claude-code-channels`, `--provider hermes-agent`, and
-`--provider openclaw`. The short positional aliases still work for fast manual
-use, and internal evi ids remain visible only for disambiguation and config
-inspection.
+options such as `--provider claude-code-channels --profile nukoevi`,
+`--provider hermes-agent --profile nukoevi`, and `--provider openclaw`.
+Internal evi ids can be used only through `--id` when the provider/profile pair
+is not the clearest selector.
 
 For Claude Code Channels, `processor launch-plan` renders the channel plugins
 from the identity's active interfaces:
 
 ```bash
-evictl processor switch nukoevi --provider claude-code-channels
+evictl processor switch nukoevi --provider claude-code-channels --profile nukoevi
 evictl processor launch-plan nukoevi
 evictl processor launch-plan nukoevi --json
 ```
@@ -203,8 +202,8 @@ plist, tmux wrapper, or one-shot launcher can use:
 evictl inspect evi-hermes-agent-grok
 ```
 
-`spawn <provider>` remains as a compatibility alias for `evi add`. `evi clone`
-creates a new replica entry from an existing evi and records `replica_of`.
+`evi clone` creates a new replica entry from an existing evi and records
+`replica_of`.
 `evi start` and `evi stop` operate the configured provider target for an evi.
 Fresh runtime-native profile creation is still intentionally adapter-specific:
 the inventory records the desired replica, provider, network, workspace,
@@ -236,7 +235,6 @@ Promote and sync memory:
 evictl memory promote
 evictl memory search ownership
 evictl memory export
-evictl memory import
 evictl memory sync
 evictl sync
 ```
@@ -247,8 +245,7 @@ evictl sync
 `memory search` searches the JSONL event log and compiled memory notes. Use
 `--json` for machine-readable results.
 
-`memory export` prints the compiled network memory to stdout. `memory import`
-is an alias for `memory sync`.
+`memory export` prints the compiled network memory to stdout.
 
 `memory sync` builds `compiled_notes/network.md` from provider memory sources and
 writes a managed `evictl:network-memory` section back into provider-visible
