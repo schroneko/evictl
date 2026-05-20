@@ -352,9 +352,10 @@ Protect Tailscale from background Homebrew cask upgrades:
 evictl tailscale protect
 ```
 
-`tailscale protect` disables the known Homebrew autoupdate LaunchAgents and
-moves their plist files into `~/Library/LaunchAgents.disabled`. This prevents
-background `brew upgrade` runs from uninstalling or replacing `tailscale-app`
+`tailscale protect` disables known Homebrew autoupdate LaunchAgents and scans
+`~/Library/LaunchAgents` for custom Homebrew upgrade agents. It moves matching
+plist files into `~/Library/LaunchAgents.disabled`. This prevents background
+`brew upgrade` runs from quitting, uninstalling, or replacing `tailscale-app`
 while the machine is being used as a remote agent host.
 
 Send a task:

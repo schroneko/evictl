@@ -158,6 +158,36 @@ describe("tailscale protection", () => {
       "/tmp/home/Library/LaunchAgents/com.github.domt4.homebrew-autoupdate.plist",
     ]);
   });
+
+  test("discovers custom Homebrew upgrade launch agents", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-homebrew-agent-test-"));
+    try {
+      const launchAgents = join(root, "Library", "LaunchAgents");
+      mkdirSync(launchAgents, { recursive: true });
+      writeFileSync(
+        join(launchAgents, "com.example.homebrew-auto-upgrade.plist"),
+        `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.example.homebrew-auto-upgrade</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/example/scripts/homebrew-auto-upgrade.sh</string>
+  </array>
+</dict>
+</plist>
+`,
+      );
+
+      expect(homebrewAutoupdateAgents(root)).toContainEqual({
+        label: "com.example.homebrew-auto-upgrade",
+        path: join(launchAgents, "com.example.homebrew-auto-upgrade.plist"),
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("inventory", () => {

@@ -360,7 +360,7 @@ export function userDomain(): string {
 }
 
 export function homebrewAutoupdateAgents(home = homedir()): LaunchAgentRecord[] {
-  return [
+  const agents = [
     {
       label: "com.homebrew.autoupdate",
       path: join(home, "Library", "LaunchAgents", "com.homebrew.autoupdate.plist"),
@@ -370,6 +370,50 @@ export function homebrewAutoupdateAgents(home = homedir()): LaunchAgentRecord[] 
       path: join(home, "Library", "LaunchAgents", "com.github.domt4.homebrew-autoupdate.plist"),
     },
   ];
+  const discovered = discoverHomebrewUpgradeLaunchAgents(home);
+  const seen = new Set(agents.map((agent) => `${agent.label}\0${agent.path}`));
+  for (const agent of discovered) {
+    const key = `${agent.label}\0${agent.path}`;
+    if (seen.has(key)) continue;
+    agents.push(agent);
+    seen.add(key);
+  }
+  return agents;
+}
+
+function discoverHomebrewUpgradeLaunchAgents(home = homedir()): LaunchAgentRecord[] {
+  const dir = join(home, "Library", "LaunchAgents");
+  if (!existsSync(dir)) return [];
+  const agents: LaunchAgentRecord[] = [];
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith(".plist")) continue;
+    const path = join(dir, file);
+    let content = "";
+    try {
+      content = readFileSync(path, "utf8");
+    } catch {
+      continue;
+    }
+    if (!isHomebrewUpgradeLaunchAgent(content)) continue;
+    agents.push({ label: launchAgentLabel(content, file), path });
+  }
+  return agents;
+}
+
+function isHomebrewUpgradeLaunchAgent(content: string): boolean {
+  const lowered = content.toLowerCase();
+  return (
+    lowered.includes("brew") &&
+    (lowered.includes("brew upgrade") ||
+      lowered.includes("homebrew-auto-upgrade") ||
+      lowered.includes("homebrew-autoupdate") ||
+      lowered.includes("autoupdate"))
+  );
+}
+
+function launchAgentLabel(content: string, file: string): string {
+  const label = content.match(/<key>\s*Label\s*<\/key>\s*<string>([^<]+)<\/string>/i)?.[1];
+  return label ?? file.replace(/\.plist$/, "");
 }
 
 export function expandPath(value?: string): string | undefined {
