@@ -1220,6 +1220,32 @@ function processorLabel(evi: Evi): string {
   return `${evi.provider}:${evi.profile || "default"} (${evi.eviId})`;
 }
 
+function positionalArgs(args: string[]): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith("--")) {
+      if (VALUE_OPTIONS.has(arg)) index += 1;
+      continue;
+    }
+    values.push(arg);
+  }
+  return values;
+}
+
+export function processorSelectorFromArgs(args: string[], commandName: string): string {
+  const id = optionValue(args, "--id");
+  if (id) return id;
+  const provider = optionValue(args, "--provider") ?? optionValue(args, "--processor") ?? "";
+  const profile = optionValue(args, "--profile") ?? "";
+  if (provider && profile) return `${provider}:${profile}`;
+  if (provider) return provider;
+  if (profile) return profile;
+  const processor = positionalArgs(args)[1] ?? "";
+  if (processor) return processor;
+  throw new Error(`${commandName} requires a processor, --provider <provider>, or --id <evi>`);
+}
+
 export function resolveProcessorEvi(
   inventory: Inventory,
   identityId: string,
@@ -2500,7 +2526,7 @@ function reconcileRuntimeTargets(inventory: Inventory): TargetStatus[] {
 
 function cmdIdentitySwitch(args: string[], label: "active" | "processor"): number {
   const identityId = required(args[0], "identity switch requires an identity id");
-  const processor = required(args[1], "identity switch requires a processor");
+  const processor = processorSelectorFromArgs(args, "identity switch");
   const path = optionValue(args, "--config") ?? configPath();
   const result = switchIdentityProcessorConfig(loadConfigData(path), identityId, processor);
   const inventory = loadInventory(result.data);
@@ -2527,23 +2553,42 @@ function cmdProcessorList(args: string[] = []): number {
     throw new Error(`unknown identity: ${identityId} (known: ${known})`);
   }
   const evis = Object.values(inventory.evis);
+  const rows = evis
+    .sort((a, b) => a.eviId.localeCompare(b.eviId))
+    .map((evi) => {
+      const identities =
+        Object.values(inventory.identities)
+          .filter((identity) => identity.activeEvi === evi.eviId)
+          .map((identity) => identity.identityId)
+          .sort();
+      return {
+        provider: evi.provider,
+        selector: "",
+        profile: evi.profile,
+        identities,
+        active: identity ? identity.activeEvi === evi.eviId : undefined,
+        id: evi.eviId,
+      };
+    });
   const providerCounts = evis.reduce<Record<string, number>>((counts, evi) => {
     counts[evi.provider] = (counts[evi.provider] ?? 0) + 1;
     return counts;
   }, {});
+  for (const row of rows) {
+    row.selector =
+      providerCounts[row.provider] === 1 ? row.provider : `${row.provider}:${row.profile || "default"}`;
+  }
+  if (hasFlag(args, "--json")) {
+    console.log(JSON.stringify(rows, null, 2));
+    return 0;
+  }
   const width = Math.max(...evis.map((evi) => evi.provider.length));
-  for (const evi of evis.sort((a, b) => a.eviId.localeCompare(b.eviId))) {
-    const identities =
-      Object.values(inventory.identities)
-        .filter((identity) => identity.activeEvi === evi.eviId)
-        .map((identity) => identity.identityId)
-        .sort()
-        .join(",") || "-";
-    const selector = providerCounts[evi.provider] === 1 ? evi.provider : `${evi.provider}:${evi.profile || "default"}`;
-    const active = identity?.activeEvi === evi.eviId ? "yes" : "no";
+  for (const row of rows) {
+    const identities = row.identities.join(",") || "-";
+    const active = row.active ? "yes" : "no";
     const activePart = identity ? `  active=${active}` : "";
     console.log(
-      `${evi.provider.padEnd(width)}  selector=${selector}  profile=${evi.profile}  identities=${identities}${activePart}  id=${evi.eviId}`,
+      `${row.provider.padEnd(width)}  selector=${row.selector}  profile=${row.profile}  identities=${identities}${activePart}  id=${row.id}`,
     );
   }
   return 0;
@@ -2551,7 +2596,7 @@ function cmdProcessorList(args: string[] = []): number {
 
 function cmdProcessorBind(args: string[]): number {
   const identityId = required(args[0], "processor bind requires an identity id");
-  const processor = required(args[1], "processor bind requires a processor");
+  const processor = processorSelectorFromArgs(args, "processor bind");
   const path = optionValue(args, "--config") ?? configPath();
   const next = bindIdentityProcessorConfig(loadConfigData(path), identityId, processor);
   const inventory = loadInventory(next);
@@ -3062,9 +3107,9 @@ Commands:
   identity switch <identity> <processor>
   interface list
   interface bind <key> <identity> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
-  processor list [identity]
-  processor bind <identity> <processor>
-  processor switch <identity> <processor>
+  processor list [identity] [--json]
+  processor bind <identity> [processor] [--provider <provider>] [--profile <profile>] [--id <evi>]
+  processor switch <identity> [processor] [--provider <provider>] [--profile <profile>] [--id <evi>]
   processor launch-plan <identity> [--json]
   spawn <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   start <target>

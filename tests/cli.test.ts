@@ -27,6 +27,7 @@ import {
   promoteMemoryEvents,
   queueTaskEvent,
   readMemoryEvents,
+  processorSelectorFromArgs,
   resolveProcessorEvi,
   resolveEviTarget,
   resolveProcessorTarget,
@@ -567,6 +568,21 @@ describe("identity routing", () => {
     );
     expect(resolveProcessorEvi(inventory, "nukoevi", "claude-code-channels").eviId).toBe(
       "evi-claude-code-channels-telegram",
+    );
+  });
+
+  test("parses explicit processor selector options", () => {
+    expect(processorSelectorFromArgs(["nukoevi", "--provider", "claude-code-channels"], "switch")).toBe(
+      "claude-code-channels",
+    );
+    expect(
+      processorSelectorFromArgs(
+        ["nukoevi", "--provider", "hermes-agent", "--profile", "nukoevi"],
+        "switch",
+      ),
+    ).toBe("hermes-agent:nukoevi");
+    expect(processorSelectorFromArgs(["nukoevi", "--id", "evi-openclaw"], "switch")).toBe(
+      "evi-openclaw",
     );
   });
 
