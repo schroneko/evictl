@@ -2634,7 +2634,8 @@ function cmdSwitchCharacter(args: string[]): number {
 }
 
 function cmdProcessorList(args: string[] = []): number {
-  const inventory = loadInventory();
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
   const identityId = args[0] && !args[0].startsWith("--") ? args[0] : "";
   const identity = identityId ? inventory.identities[identityId] : undefined;
   if (identityId && !identity) {
@@ -2681,6 +2682,11 @@ function cmdProcessorList(args: string[] = []): number {
     );
   }
   return 0;
+}
+
+function cmdEngineList(args: string[] = []): number {
+  const characterId = required(optionValue(args, "--character"), "engine list requires --character <character>");
+  return cmdProcessorList([characterId, ...args]);
 }
 
 function cmdProcessorBind(args: string[]): number {
@@ -3176,15 +3182,22 @@ function printHelp(): void {
   console.log(`Usage: evictl <command>
 
 Global options:
-  --headless  Run without interactive UI or open-ended waits. Long-running commands must opt into a one-shot form.
+  --headless  Run without open-ended waits. Long-running commands must opt into a one-shot form.
 
-Commands:
+Common commands:
   create <character> [--memory-scope <scope>] [--description <text>] [--force]
   switch --character <character> --engine <engine> [--deployment <name>]
-  ps
+  engine list --character <character> [--json]
+  status [target]
+  send <character-or-engine> --text <text> [--queue-only]
+
+Setup commands:
   discover [--json]
   import [--dry-run] [--json] [--config <path>]
-  status [target]
+  interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
+
+Advanced commands:
+  ps
   targets
   target add <name> --provider <provider> [--label <launchd-label>] [--plist <path>] [--tmux <session>] [--process <regex>] [--health <text>] [--force]
   evi add --provider <provider> [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--network <id>] [--force]
@@ -3199,7 +3212,7 @@ Commands:
   identity switch <identity> --provider <provider> [--profile <profile>]
   identity switch <identity> --id <evi>
   interface list
-  interface bind <key> <identity> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
+  interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
   processor list [identity] [--json]
   processor bind <identity> --provider <provider> [--profile <profile>]
   processor bind <identity> --id <evi>
@@ -3222,7 +3235,7 @@ Commands:
   memory export [--json]
   memory sync
   sync [--limit <n>]
-  send <evi-or-identity> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
+  send <evi-or-character> --text <text> [--subject <id>] [--source <source>] [--queue-only] [--dry-run]
   feedback <evi> --text <text> [--verdict <verdict>] [--subject <id>] [--source <source>] [--confidence <n>]
   inspect <evi>
 `);
@@ -3269,6 +3282,7 @@ export function main(argv = process.argv.slice(2)): number {
     return cmdIdentitySwitch(args.slice(1), "active");
   if (command === "interface" && args[0] === "list") return cmdInterfaceList();
   if (command === "interface" && args[0] === "bind") return cmdInterfaceBind(args.slice(1));
+  if (command === "engine" && args[0] === "list") return cmdEngineList(args.slice(1));
   if (command === "processor" && args[0] === "list") return cmdProcessorList(args.slice(1));
   if (command === "processor" && args[0] === "bind") return cmdProcessorBind(args.slice(1));
   if (command === "processor" && args[0] === "switch")

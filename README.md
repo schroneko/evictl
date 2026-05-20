@@ -37,9 +37,9 @@ Run the CLI directly during development:
 bun run src/cli.ts ps
 ```
 
-## Headless operation
+## Automation
 
-`--headless` is a global flag for non-interactive automation:
+`--headless` is a global flag for automation:
 
 ```bash
 evictl --headless status
@@ -47,10 +47,9 @@ evictl status --headless
 evictl --headless monitor --once
 ```
 
-Headless mode does not imply JSON output or automatic confirmation. It only
-removes interactive UI expectations and rejects commands that would wait
-indefinitely without an explicit one-shot form. Use command-specific `--json`
-flags where available.
+Headless mode does not imply JSON output or automatic confirmation. It rejects
+commands that would wait indefinitely without an explicit one-shot form. Use
+command-specific `--json` flags where available.
 
 ## Installation
 
@@ -76,16 +75,61 @@ The repository includes an Agent Skill at `skills/evictl`.
 Install or vendor it with your agent skill manager, then invoke it when managing
 local evi instances, routes, runtime handoff, or shared memory with `evictl`.
 
+## Quick Start
+
+These are the commands a first-time user should copy and adjust:
+
+```bash
+evictl create demo
+evictl import --dry-run
+evictl import
+evictl engine list --character demo
+evictl switch --character demo --engine claude-code-channels
+evictl status
+```
+
+The character name is the outside personality. The engine is the inside that
+answers for it.
+
+```bash
+evictl switch --character demo --engine hermes-agent
+evictl switch --character demo --engine openclaw
+evictl switch --character demo --engine claude-code-channels
+```
+
+If one engine has multiple deployments for the same character, choose one:
+
+```bash
+evictl switch --character demo --engine claude-code-channels --deployment telegram
+```
+
+Every setup step is explicit and repeatable. Commands never stop to ask questions.
+
 ## Commands
+
+Common commands:
+
+```bash
+evictl create
+evictl switch
+evictl engine list
+evictl status
+evictl send
+```
+
+Setup commands:
+
+```bash
+evictl discover
+evictl import
+evictl interface bind
+```
+
+Advanced commands:
 
 ```bash
 evictl ps
-evictl discover
-evictl import
-evictl status
 evictl doctor
-evictl create
-evictl switch
 evictl target add
 evictl evi add
 evictl evi clone
@@ -96,7 +140,6 @@ evictl identity show
 evictl identity add
 evictl identity bind
 evictl interface list
-evictl interface bind
 evictl processor list
 evictl processor switch
 evictl processor launch-plan
@@ -111,7 +154,6 @@ evictl memory search
 evictl memory export
 evictl memory sync
 evictl sync
-evictl send
 evictl feedback
 evictl inspect
 ```
@@ -147,9 +189,8 @@ evictl create demo
 evictl interface bind telegram:main demo --kind telegram --address main
 evictl interface bind discord:main demo --kind discord --address main
 evictl interface bind mqtt:demo/inbox demo --kind mqtt --address demo/inbox
-evictl processor bind demo --id evi-hermes-agent-grok
-evictl processor list demo
-evictl processor list demo --json
+evictl engine list --character demo
+evictl engine list --character demo --json
 evictl switch --character demo --engine hermes-agent
 evictl send demo --text "Run from the active processor."
 ```

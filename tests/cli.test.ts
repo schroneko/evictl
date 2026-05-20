@@ -529,6 +529,36 @@ describe("identity routing", () => {
     );
   });
 
+  test("lists engines through the public engine command", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-engine-list-test-"));
+    try {
+      const config = join(root, "config.json");
+      writeFileSync(
+        config,
+        JSON.stringify({
+          evis: {
+            "evi-claude-code-channels-demo": {
+              runtime: "claude-code-channels",
+              provider: "claude-code-channels",
+              profile: "demo",
+            },
+          },
+          identities: {
+            demo: {
+              active_evi: "evi-claude-code-channels-demo",
+            },
+          },
+        }),
+      );
+      expect(main(["engine", "list", "--character", "demo", "--json", "--config", config])).toBe(0);
+      expect(() => main(["engine", "list", "--config", config])).toThrow(
+        "engine list requires --character",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("requires deployment when a character engine has multiple equal matches", () => {
     const inventory = loadInventory({
       evis: {
