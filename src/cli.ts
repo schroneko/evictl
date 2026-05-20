@@ -271,22 +271,21 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
   "hermes-agent": {
     name: "hermes-agent",
     provider: "hermes-agent",
-    label: "ai.hermes.gateway-nukoevi",
-    plist: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
-    tmuxSessions: ["hermes-line-tunnel"],
+    label: "ai.hermes.gateway",
+    plist: "~/Library/LaunchAgents/ai.hermes.gateway.plist",
+    tmuxSessions: ["hermes-agent"],
     processPatterns: ["hermes_cli.main", "ai.hermes.gateway", "cloudflared.*\\.hermes"],
     healthPatterns: [],
   },
   "claude-code-channels": {
     name: "claude-code-channels",
     provider: "claude-code-channels",
-    label: "com.local.claude-telegram-channel",
-    plist: "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
-    tmuxSessions: ["claude-telegram-channel"],
+    label: "com.local.claude-code-channels",
+    plist: "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
+    tmuxSessions: ["claude-code-channels"],
     processPatterns: [
       "claude.*plugin:(telegram|discord|fakechat)",
-      "nukoevi-(telegram|discord)",
-      "claude-telegram-channel",
+      "claude-code-channels",
     ],
     healthPatterns: ["Listening for channel messages from:"],
     healthProcessPatterns: ["claude-plugins-official/(telegram|discord|fakechat)"],
@@ -2088,7 +2087,7 @@ function providerMemorySinks(evi: Evi): string[] {
   if (evi.provider === "claude-code-channels") {
     if (!stateDir) return [];
     const sinks = [join(stateDir, "evictl-network-memory.md")];
-    const generatedPrompt = join(stateDir, "nukoevi-system.generated.md");
+    const generatedPrompt = join(stateDir, `${slug(evi.profile)}-system.generated.md`);
     if (existsSync(generatedPrompt)) sinks.push(generatedPrompt);
     return sinks;
   }

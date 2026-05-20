@@ -134,29 +134,29 @@ Manage routes:
 
 ```bash
 evictl route list
-evictl route set telegram:main --target evi-claude-code-channels-nukoevi --account default --mode primary
+evictl route set telegram:main --target evi-claude-code-channels-demo --account default --mode primary
 ```
 
 Manage swappable interfaces and processors through an identity:
 
 ```bash
-evictl identity add nukoevi --profile nukoevi --memory-scope nukoevi
-evictl interface bind telegram:main nukoevi --kind telegram --address main
-evictl interface bind discord:main nukoevi --kind discord --address main
-evictl interface bind mqtt:nukoevi/inbox nukoevi --kind mqtt --address nukoevi/inbox
-evictl processor bind nukoevi --id evi-hermes-agent-grok
-evictl processor list nukoevi
-evictl processor list nukoevi --json
-evictl processor switch nukoevi --provider hermes-agent --profile nukoevi
-evictl send nukoevi --text "Run from the active processor."
+evictl identity add demo --profile demo --memory-scope demo
+evictl interface bind telegram:main demo --kind telegram --address main
+evictl interface bind discord:main demo --kind discord --address main
+evictl interface bind mqtt:demo/inbox demo --kind mqtt --address demo/inbox
+evictl processor bind demo --id evi-hermes-agent-grok
+evictl processor list demo
+evictl processor list demo --json
+evictl processor switch demo --provider hermes-agent --profile demo
+evictl send demo --text "Run from the active processor."
 ```
 
 Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an identity. The
 identity owns the persona and memory scope, then points at one active processor
 instance. Switching the processor changes the inner execution engine without
 changing the external interface bindings. CLI commands accept explicit processor
-options such as `--provider claude-code-channels --profile nukoevi`,
-`--provider hermes-agent --profile nukoevi`, and `--provider openclaw`.
+options such as `--provider claude-code-channels --profile demo`,
+`--provider hermes-agent --profile demo`, and `--provider openclaw`.
 Internal evi ids can be used only through `--id` when the provider/profile pair
 is not the clearest selector.
 
@@ -164,9 +164,9 @@ For Claude Code Channels, `processor launch-plan` renders the channel plugins
 from the identity's active interfaces:
 
 ```bash
-evictl processor switch nukoevi --provider claude-code-channels --profile nukoevi
-evictl processor launch-plan nukoevi
-evictl processor launch-plan nukoevi --json
+evictl processor switch demo --provider claude-code-channels --profile demo
+evictl processor launch-plan demo
+evictl processor launch-plan demo --json
 ```
 
 Create another runtime target when a replica has its own launchd plist, tmux
@@ -222,7 +222,7 @@ channel/account/peer unless `--force` is passed.
 Record feedback into the shared memory event log:
 
 ```bash
-evictl feedback evi-claude-code-channels-nukoevi --verdict remember --text "Prefer explicit route ownership."
+evictl feedback evi-claude-code-channels-demo --verdict remember --text "Prefer explicit route ownership."
 ```
 
 Feedback is appended as JSONL with the target evi, source, verdict, confidence,
@@ -271,7 +271,7 @@ Read recent runtime output:
 
 ```bash
 evictl tail claude-code-channels
-evictl tail evi-claude-code-channels-nukoevi --lines 120
+evictl tail evi-claude-code-channels-demo --lines 120
 ```
 
 `tail` reads recent tmux pane output for a configured target or evi.
@@ -290,9 +290,9 @@ while the machine is being used as a remote agent host.
 Send a task:
 
 ```bash
-evictl send evi-claude-code-channels-nukoevi --text "Run the check suite." --queue-only
-evictl send evi-claude-code-channels-nukoevi --text "Run the check suite."
-evictl send nukoevi --text "Run through the active processor."
+evictl send evi-claude-code-channels-demo --text "Run the check suite." --queue-only
+evictl send evi-claude-code-channels-demo --text "Run the check suite."
+evictl send demo --text "Run through the active processor."
 ```
 
 `send` records a task event before dispatch. For evi entries with a tmux
@@ -308,22 +308,22 @@ Example:
   "targets": {
     "claude-code-channels": {
       "provider": "claude-code-channels",
-      "label": "com.local.claude-telegram-channel",
-      "plist": "~/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
-      "tmux_sessions": ["claude-telegram-channel"],
-      "process_patterns": ["claude.*plugin:(telegram|discord|fakechat)", "nukoevi-(telegram|discord)", "claude-telegram-channel"],
+      "label": "com.local.claude-code-channels",
+      "plist": "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
+      "tmux_sessions": ["claude-code-channels"],
+      "process_patterns": ["claude.*plugin:(telegram|discord|fakechat)", "demo-(telegram|discord)", "claude-code-channels"],
       "health_patterns": ["Listening for channel messages from:"]
     }
   },
   "evis": {
-    "evi-claude-code-channels-nukoevi": {
+    "evi-claude-code-channels-demo": {
       "runtime": "claude-code-channels",
       "provider": "claude-code-channels",
-      "profile": "nukoevi",
+      "profile": "demo",
       "agent_id": "",
       "session_id": "",
       "workspace": "~/Documents/claude-code-channels",
-      "state_dir": "~/.local/share/claude-telegram-channel",
+      "state_dir": "~/.local/share/claude-code-channels",
       "model_provider": "",
       "model": "",
       "base_url": "",
@@ -331,10 +331,10 @@ Example:
     }
   },
   "identities": {
-    "nukoevi": {
-      "profile": "nukoevi",
-      "memory_scope": "nukoevi",
-      "active_evi": "evi-claude-code-channels-nukoevi",
+    "demo": {
+      "profile": "demo",
+      "memory_scope": "demo",
+      "active_evi": "evi-claude-code-channels-demo",
       "description": ""
     }
   },
@@ -342,29 +342,29 @@ Example:
     "telegram:main": {
       "kind": "telegram",
       "address": "main",
-      "identity_id": "nukoevi",
+      "identity_id": "demo",
       "mode": "primary"
     },
     "discord:main": {
       "kind": "discord",
       "address": "main",
-      "identity_id": "nukoevi",
+      "identity_id": "demo",
       "mode": "primary"
     }
   },
   "routes": {
-    "telegram:claude-code-channels:nukoevi": {
+    "telegram:claude-code-channels:demo": {
       "channel": "telegram",
       "account_id": "default",
       "peer_id": "",
-      "target_evi": "evi-claude-code-channels-nukoevi",
+      "target_evi": "evi-claude-code-channels-demo",
       "mode": "primary"
     },
-    "discord:claude-code-channels:nukoevi": {
+    "discord:claude-code-channels:demo": {
       "channel": "discord",
       "account_id": "default",
       "peer_id": "",
-      "target_evi": "evi-claude-code-channels-nukoevi",
+      "target_evi": "evi-claude-code-channels-demo",
       "mode": "primary"
     }
   },

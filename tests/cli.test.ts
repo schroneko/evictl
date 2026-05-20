@@ -206,9 +206,9 @@ describe("inventory", () => {
         },
       },
       identities: {
-        nukoevi: {
-          profile: "nukoevi",
-          memory_scope: "nukoevi",
+        demo: {
+          profile: "demo",
+          memory_scope: "demo",
           active_evi: "evi-hermes-agent-grok",
         },
       },
@@ -216,12 +216,12 @@ describe("inventory", () => {
         "telegram:main": {
           kind: "telegram",
           address: "main",
-          identity_id: "nukoevi",
+          identity_id: "demo",
         },
       },
     });
-    expect(inventory.identities.nukoevi.activeEvi).toBe("evi-hermes-agent-grok");
-    expect(inventory.interfaces["telegram:main"].identityId).toBe("nukoevi");
+    expect(inventory.identities.demo.activeEvi).toBe("evi-hermes-agent-grok");
+    expect(inventory.interfaces["telegram:main"].identityId).toBe("demo");
   });
 
   test("spawns configured evi inventory", () => {
@@ -305,13 +305,13 @@ describe("inventory", () => {
         },
       },
       identities: {
-        nukoevi: {
+        demo: {
           active_evi: "evi-hermes-agent-grok",
         },
       },
     });
-    const resolved = resolveProcessorTarget(inventory, "nukoevi");
-    expect(resolved.identity?.identityId).toBe("nukoevi");
+    const resolved = resolveProcessorTarget(inventory, "demo");
+    expect(resolved.identity?.identityId).toBe("demo");
     expect(resolved.evi.eviId).toBe("evi-hermes-agent-grok");
   });
 
@@ -481,9 +481,9 @@ describe("routes", () => {
 describe("identity routing", () => {
   test("sets identity and interface config data", () => {
     const identity: Identity = {
-      identityId: "nukoevi",
-      profile: "nukoevi",
-      memoryScope: "nukoevi",
+      identityId: "demo",
+      profile: "demo",
+      memoryScope: "demo",
       activeEvi: "evi-hermes-agent-grok",
       description: "",
     };
@@ -491,7 +491,7 @@ describe("identity routing", () => {
       key: "telegram:main",
       kind: "telegram",
       address: "main",
-      identityId: "nukoevi",
+      identityId: "demo",
       mode: "primary",
     };
     const withIdentity = setIdentityConfig(
@@ -507,11 +507,11 @@ describe("identity routing", () => {
     );
     const next = setInterfaceConfig(withIdentity, binding);
     expect(
-      (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+      (next.identities as Record<string, Record<string, string>>).demo.active_evi,
     ).toBe("evi-hermes-agent-grok");
     expect(
       (next.interfaces as Record<string, Record<string, string>>)["telegram:main"].identity_id,
-    ).toBe("nukoevi");
+    ).toBe("demo");
   });
 
   test("switches an identity active processor", () => {
@@ -528,16 +528,16 @@ describe("identity routing", () => {
           },
         },
         identities: {
-          nukoevi: {
+          demo: {
             active_evi: "evi-hermes-agent-grok",
           },
         },
       },
-      "nukoevi",
+      "demo",
       "id:evi-hermes-agent-codex",
     );
     expect(
-      (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+      (next.identities as Record<string, Record<string, string>>).demo.active_evi,
     ).toBe("evi-hermes-agent-codex");
   });
 
@@ -549,54 +549,54 @@ describe("identity routing", () => {
           provider: "hermes-agent",
           profile: "default",
         },
-        "evi-hermes-agent-nukoevi": {
+        "evi-hermes-agent-demo": {
           runtime: "hermes-agent",
           provider: "hermes-agent",
-          profile: "nukoevi",
+          profile: "demo",
         },
         "evi-claude-code-channels-telegram": {
           runtime: "claude-code-channels",
           provider: "claude-code-channels",
           profile: "telegram",
-          agent_id: "nukoevi-telegram",
+          agent_id: "demo-telegram",
         },
       },
       identities: {
-        nukoevi: {
-          profile: "nukoevi",
-          active_evi: "evi-hermes-agent-nukoevi",
+        demo: {
+          profile: "demo",
+          active_evi: "evi-hermes-agent-demo",
         },
       },
     });
-    expect(() => resolveProcessorEvi(inventory, "nukoevi", "hermes-agent")).toThrow(
+    expect(() => resolveProcessorEvi(inventory, "demo", "hermes-agent")).toThrow(
       "ambiguous processor provider",
     );
-    expect(resolveProcessorEvi(inventory, "nukoevi", "hermes-agent:nukoevi").eviId).toBe(
-      "evi-hermes-agent-nukoevi",
+    expect(resolveProcessorEvi(inventory, "demo", "hermes-agent:demo").eviId).toBe(
+      "evi-hermes-agent-demo",
     );
-    expect(resolveProcessorEvi(inventory, "nukoevi", "claude-code-channels:telegram").eviId).toBe(
+    expect(resolveProcessorEvi(inventory, "demo", "claude-code-channels:telegram").eviId).toBe(
       "evi-claude-code-channels-telegram",
     );
-    expect(resolveProcessorEvi(inventory, "nukoevi", "id:evi-claude-code-channels-telegram").eviId).toBe(
+    expect(resolveProcessorEvi(inventory, "demo", "id:evi-claude-code-channels-telegram").eviId).toBe(
       "evi-claude-code-channels-telegram",
     );
   });
 
   test("parses explicit processor selector options", () => {
-    expect(processorSelectorFromArgs(["nukoevi", "--provider", "claude-code-channels"], "switch")).toBe(
+    expect(processorSelectorFromArgs(["demo", "--provider", "claude-code-channels"], "switch")).toBe(
       "claude-code-channels",
     );
     expect(
       processorSelectorFromArgs(
-        ["nukoevi", "--provider", "hermes-agent", "--profile", "nukoevi"],
+        ["demo", "--provider", "hermes-agent", "--profile", "demo"],
         "switch",
       ),
-    ).toBe("hermes-agent:nukoevi");
-    expect(processorSelectorFromArgs(["nukoevi", "--id", "evi-openclaw"], "switch")).toBe("id:evi-openclaw");
-    expect(() => processorSelectorFromArgs(["nukoevi", "claude-code-channels"], "switch")).toThrow(
+    ).toBe("hermes-agent:demo");
+    expect(processorSelectorFromArgs(["demo", "--id", "evi-openclaw"], "switch")).toBe("id:evi-openclaw");
+    expect(() => processorSelectorFromArgs(["demo", "claude-code-channels"], "switch")).toThrow(
       "requires explicit processor selection",
     );
-    expect(() => processorSelectorFromArgs(["nukoevi", "--processor", "claude-code-channels"], "switch")).toThrow(
+    expect(() => processorSelectorFromArgs(["demo", "--processor", "claude-code-channels"], "switch")).toThrow(
       "requires explicit processor selection",
     );
   });
@@ -605,30 +605,30 @@ describe("identity routing", () => {
     const next = bindIdentityProcessorConfig(
       {
         evis: {
-          "evi-hermes-agent-nukoevi": {
+          "evi-hermes-agent-demo": {
             runtime: "hermes-agent",
             provider: "hermes-agent",
-            profile: "nukoevi",
+            profile: "demo",
           },
           "evi-claude-code-channels-telegram": {
             runtime: "claude-code-channels",
             provider: "claude-code-channels",
             profile: "telegram",
-            agent_id: "nukoevi-telegram",
+            agent_id: "demo-telegram",
           },
         },
         identities: {
-          nukoevi: {
-            profile: "nukoevi",
-            active_evi: "evi-hermes-agent-nukoevi",
+          demo: {
+            profile: "demo",
+            active_evi: "evi-hermes-agent-demo",
           },
         },
       },
-      "nukoevi",
+      "demo",
       "claude-code-channels:telegram",
     );
     expect(
-      (next.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+      (next.identities as Record<string, Record<string, string>>).demo.active_evi,
     ).toBe("evi-claude-code-channels-telegram");
   });
 
@@ -636,7 +636,7 @@ describe("identity routing", () => {
     const result = switchIdentityProcessorConfig(
       {
         evis: {
-          "evi-hermes-agent-nukoevi": {
+          "evi-hermes-agent-demo": {
             runtime: "hermes-agent",
             provider: "hermes-agent",
           },
@@ -647,23 +647,23 @@ describe("identity routing", () => {
           },
         },
         identities: {
-          nukoevi: {
-            active_evi: "evi-hermes-agent-nukoevi",
+          demo: {
+            active_evi: "evi-hermes-agent-demo",
           },
         },
         interfaces: {
           "telegram:main": {
             kind: "telegram",
             address: "default",
-            identity_id: "nukoevi",
+            identity_id: "demo",
             mode: "primary",
           },
         },
         routes: {
-          "telegram:hermes-agent:nukoevi": {
+          "telegram:hermes-agent:demo": {
             channel: "telegram",
             account_id: "default",
-            target_evi: "evi-hermes-agent-nukoevi",
+            target_evi: "evi-hermes-agent-demo",
             mode: "primary",
           },
           "telegram:claude-code-channels:telegram": {
@@ -674,14 +674,14 @@ describe("identity routing", () => {
           },
         },
       },
-      "nukoevi",
+      "demo",
       "id:evi-claude-code-channels-telegram",
     );
     const routes = result.data.routes as Record<string, Record<string, string>>;
     expect(
-      (result.data.identities as Record<string, Record<string, string>>).nukoevi.active_evi,
+      (result.data.identities as Record<string, Record<string, string>>).demo.active_evi,
     ).toBe("evi-claude-code-channels-telegram");
-    expect(routes["telegram:hermes-agent:nukoevi"]).toBeUndefined();
+    expect(routes["telegram:hermes-agent:demo"]).toBeUndefined();
     expect(routes["telegram:claude-code-channels:telegram"].mode).toBe("primary");
     expect(result.previousRuntime).toBe("hermes-agent");
     expect(result.nextRuntime).toBe("claude-code-channels");
@@ -690,7 +690,7 @@ describe("identity routing", () => {
   test("marks only active identity and primary route runtimes as in use", () => {
     const inventory = loadInventory({
       evis: {
-        "evi-hermes-agent-nukoevi": {
+        "evi-hermes-agent-demo": {
           runtime: "hermes-agent",
           provider: "hermes-agent",
         },
@@ -700,7 +700,7 @@ describe("identity routing", () => {
         },
       },
       identities: {
-        nukoevi: {
+        demo: {
           active_evi: "evi-claude-code-channels-telegram",
         },
       },
@@ -711,10 +711,10 @@ describe("identity routing", () => {
           target_evi: "evi-claude-code-channels-telegram",
           mode: "primary",
         },
-        "telegram:hermes-agent:nukoevi": {
+        "telegram:hermes-agent:demo": {
           channel: "telegram",
           account_id: "default",
-          target_evi: "evi-hermes-agent-nukoevi",
+          target_evi: "evi-hermes-agent-demo",
           mode: "standby",
         },
       },
@@ -746,28 +746,28 @@ describe("identity routing", () => {
   test("builds a Claude Code Channels launch plan from active interfaces", () => {
     const inventory = loadInventory({
       evis: {
-        "evi-claude-code-channels-nukoevi": {
+        "evi-claude-code-channels-demo": {
           runtime: "claude-code-channels",
           provider: "claude-code-channels",
         },
       },
       identities: {
-        nukoevi: {
-          active_evi: "evi-claude-code-channels-nukoevi",
+        demo: {
+          active_evi: "evi-claude-code-channels-demo",
         },
       },
       interfaces: {
         "discord:main": {
           kind: "discord",
-          identity_id: "nukoevi",
+          identity_id: "demo",
         },
         "telegram:main": {
           kind: "telegram",
-          identity_id: "nukoevi",
+          identity_id: "demo",
         },
       },
     });
-    const plan = claudeCodeChannelsLaunchPlan(inventory, "nukoevi");
+    const plan = claudeCodeChannelsLaunchPlan(inventory, "demo");
     expect(plan.args).toEqual([
       "--channels",
       "plugin:discord@claude-plugins-official",
@@ -799,10 +799,10 @@ describe("process parsing", () => {
       [
         "10 pgrep -af openclaw|ai.openclaw.gateway",
         "20 /opt/homebrew/bin/bun ./dist/evictl doctor",
-        "25 grep -E openclaw|nukoevi-telegram",
-        "30 claude --channels plugin:telegram@claude-plugins-official --name nukoevi-telegram",
+        "25 grep -E openclaw|demo-telegram",
+        "30 claude --channels plugin:telegram@claude-plugins-official --name demo-telegram",
       ].join("\n"),
-      ["openclaw", "nukoevi-telegram"],
+      ["openclaw", "demo-telegram"],
       20,
     );
     expect(pids).toEqual([30]);
@@ -1099,18 +1099,18 @@ describe("tmux send", () => {
             },
           },
           identities: {
-            nukoevi: {
+            demo: {
               active_evi: "evi-hermes-agent-grok",
             },
           },
         }),
       );
       expect(
-        main(["send", "nukoevi", "--text", "Search X", "--queue-only", "--config", config]),
+        main(["send", "demo", "--text", "Search X", "--queue-only", "--config", config]),
       ).toBe(0);
       const [event] = readMemoryEvents(eventLog);
       expect(event.target_evi).toBe("evi-hermes-agent-grok");
-      expect(event.subject).toBe("nukoevi");
+      expect(event.subject).toBe("demo");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1124,20 +1124,20 @@ describe("discovery", () => {
       const discovery = discoverFromPlistRecords(
         [
           {
-            path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
+            path: "~/Library/LaunchAgents/ai.hermes.gateway-demo.plist",
             data: {
-              Label: "ai.hermes.gateway-nukoevi",
+              Label: "ai.hermes.gateway-demo",
               ProgramArguments: [
                 "~/.hermes/hermes-agent/venv/bin/python",
                 "-m",
                 "hermes_cli.main",
                 "--profile",
-                "nukoevi",
+                "demo",
                 "gateway",
                 "run",
               ],
               EnvironmentVariables: {
-                HERMES_HOME: "~/.hermes/profiles/nukoevi",
+                HERMES_HOME: "~/.hermes/profiles/demo",
               },
               WorkingDirectory: "~/.hermes/hermes-agent",
             },
@@ -1147,7 +1147,7 @@ describe("discovery", () => {
             data: {
               Label: "com.local.claude-code-channels",
               ProgramArguments: ["/bin/zsh", join(root, "start.sh")],
-              WorkingDirectory: "~/Documents/Codex/hermes-agent-claude-code-channels",
+              WorkingDirectory: "~/Documents/Codex/claude-code-channels-demo",
             },
           },
         ],
@@ -1157,12 +1157,12 @@ describe("discovery", () => {
         "claude-code-channels",
         "hermes-agent",
       ]);
-      expect(discovery.evis["evi-hermes-agent-nukoevi"].runtime).toBe("hermes-agent");
+      expect(discovery.evis["evi-hermes-agent-demo"].runtime).toBe("hermes-agent");
       expect(discovery.evis["evi-claude-code-channels-default"].runtime).toBe(
         "claude-code-channels",
       );
       expect(discovery.interfaces["telegram:main"].identityId).toBe("default");
-      expect(discovery.routes["telegram:hermes-agent:nukoevi"]).toBeUndefined();
+      expect(discovery.routes["telegram:hermes-agent:demo"]).toBeUndefined();
       expect(discovery.routes["telegram:claude-code-channels:default"].mode).toBe("primary");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -1176,8 +1176,8 @@ describe("discovery", () => {
       writeFileSync(
         startScript,
         [
-          "session_name=\"claude-code-channels-nukoevi\"",
-          "exec tmux new-session -d -s \"${session_name}\" \"claude --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official --name nukoevi-telegram\"",
+          "session_name=\"claude-code-channels-demo\"",
+          "exec tmux new-session -d -s \"${session_name}\" \"claude --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official --name demo-telegram\"",
         ].join("\n"),
       );
       const discovery = discoverFromPlistRecords(
@@ -1187,16 +1187,16 @@ describe("discovery", () => {
             data: {
               Label: "com.local.claude-code-channels",
               ProgramArguments: ["/bin/zsh", startScript],
-              WorkingDirectory: "~/Documents/Codex/hermes-agent-claude-code-channels",
+              WorkingDirectory: "~/Documents/Codex/claude-code-channels-demo",
             },
           },
         ],
         { "claude-code-channels": true },
       );
-      expect(discovery.evis["evi-claude-code-channels-nukoevi"].profile).toBe("nukoevi");
-      expect(discovery.interfaces["discord:main"].identityId).toBe("nukoevi");
-      expect(discovery.interfaces["telegram:main"].identityId).toBe("nukoevi");
-      expect(discovery.routes["discord:claude-code-channels:nukoevi"].mode).toBe("primary");
+      expect(discovery.evis["evi-claude-code-channels-demo"].profile).toBe("demo");
+      expect(discovery.interfaces["discord:main"].identityId).toBe("demo");
+      expect(discovery.interfaces["telegram:main"].identityId).toBe("demo");
+      expect(discovery.routes["discord:claude-code-channels:demo"].mode).toBe("primary");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1251,10 +1251,10 @@ describe("discovery", () => {
       const discovery = discoverFromPlistRecords(
         [
           {
-            path: "~/Library/LaunchAgents/ai.hermes.gateway-nukoevi.plist",
+            path: "~/Library/LaunchAgents/ai.hermes.gateway-demo.plist",
             data: {
-              Label: "ai.hermes.gateway-nukoevi",
-              ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "nukoevi"],
+              Label: "ai.hermes.gateway-demo",
+              ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "demo"],
             },
           },
           {
@@ -1267,7 +1267,7 @@ describe("discovery", () => {
         ],
         { "claude-code-channels": true, "hermes-agent": true },
       );
-      expect(discovery.routes["telegram:hermes-agent:nukoevi"]).toBeUndefined();
+      expect(discovery.routes["telegram:hermes-agent:demo"]).toBeUndefined();
       expect(discovery.routes["telegram:claude-code-channels:default"]).toBeUndefined();
       expect(discovery.warnings.some((warning) => warning.includes("route conflict"))).toBe(true);
     } finally {
