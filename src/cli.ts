@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -33,6 +34,11 @@ export type TargetStatus = {
   pids: number[];
   tmuxSessions: string[];
   notes: string[];
+};
+
+export type LaunchAgentRecord = {
+  label: string;
+  path: string;
 };
 
 export type Evi = {
@@ -349,6 +355,19 @@ export function run(command: string[]): RunResult {
 
 export function userDomain(): string {
   return `gui/${process.getuid?.() ?? 0}`;
+}
+
+export function homebrewAutoupdateAgents(home = homedir()): LaunchAgentRecord[] {
+  return [
+    {
+      label: "com.homebrew.autoupdate",
+      path: join(home, "Library", "LaunchAgents", "com.homebrew.autoupdate.plist"),
+    },
+    {
+      label: "com.github.domt4.homebrew-autoupdate",
+      path: join(home, "Library", "LaunchAgents", "com.github.domt4.homebrew-autoupdate.plist"),
+    },
+  ];
 }
 
 export function expandPath(value?: string): string | undefined {
@@ -2877,10 +2896,44 @@ function cmdMonitor(args: string[], options: GlobalOptions): number {
   return 0;
 }
 
+function disabledLaunchAgentPath(path: string): string {
+  const disabledDir = `${dirname(path)}.disabled`;
+  const first = join(disabledDir, basename(path));
+  if (!existsSync(first)) return first;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return join(disabledDir, `${basename(path)}.${stamp}`);
+}
+
+function disableHomebrewAutoupdateAgent(agent: LaunchAgentRecord): boolean {
+  if (!existsSync(agent.path)) return false;
+  run(["launchctl", "disable", `${userDomain()}/${agent.label}`]);
+  run(["launchctl", "bootout", userDomain(), agent.path]);
+  const disabledPath = disabledLaunchAgentPath(agent.path);
+  mkdirSync(dirname(disabledPath), { recursive: true });
+  renameSync(agent.path, disabledPath);
+  console.log(`homebrew-autoupdate label=${agent.label} disabled_path=${disabledPath}`);
+  return true;
+}
+
+function cmdTailscaleProtect(): number {
+  let changed = false;
+  for (const agent of homebrewAutoupdateAgents()) {
+    changed = disableHomebrewAutoupdateAgent(agent) || changed;
+  }
+  console.log(`tailscale_protect=${changed ? "changed" : "already-protected"}`);
+  return 0;
+}
+
 function cmdDoctor(): number {
   const targets = loadTargets();
   const statuses = Object.values(targets).map(statusFor);
   printStatuses(statuses);
+  const riskyAgents = homebrewAutoupdateAgents().filter((agent) => existsSync(agent.path));
+  for (const agent of riskyAgents) {
+    console.error(
+      `warning: ${agent.label} can upgrade tailscale-app in the background: ${agent.path}`,
+    );
+  }
   const conflicts = duplicatePrimaryRoutes(loadInventory().routes);
   if (conflicts.size > 0) {
     for (const [owner, routes] of conflicts) {
@@ -2940,6 +2993,7 @@ Commands:
   monitor [--once] [--interval <seconds>]
   tail <target-or-evi> [--lines <n>]
   doctor
+  tailscale protect
   route list
   route set <key> --target <evi> [--channel <channel>] [--account <id>] [--peer <id>] [--mode <mode>] [--force]
   memory status
@@ -3001,6 +3055,7 @@ export function main(argv = process.argv.slice(2)): number {
     return cmdIdentitySwitch(args.slice(1), "processor");
   if (command === "processor" && args[0] === "launch-plan")
     return cmdProcessorLaunchPlan(args.slice(1));
+  if (command === "tailscale" && args[0] === "protect") return cmdTailscaleProtect();
   if (command === "memory" && args[0] === "status") return cmdMemoryStatus();
   if (command === "memory" && args[0] === "promote") return cmdMemoryPromote(args.slice(1));
   if (command === "memory" && args[0] === "search") return cmdMemorySearch(args.slice(1));

@@ -18,6 +18,7 @@ import {
   createTaskEvent,
   discoverFromPlistRecords,
   duplicatePrimaryRoutes,
+  homebrewAutoupdateAgents,
   loadInventory,
   main,
   mergeConfigData,
@@ -135,6 +136,19 @@ describe("global options", () => {
 
   test("rejects open-ended monitor in headless mode", () => {
     expect(() => main(["--headless", "monitor"])).toThrow("monitor --headless requires --once");
+  });
+});
+
+describe("tailscale protection", () => {
+  test("targets both known Homebrew autoupdate launch agents", () => {
+    expect(homebrewAutoupdateAgents("/tmp/home").map((agent) => agent.label)).toEqual([
+      "com.homebrew.autoupdate",
+      "com.github.domt4.homebrew-autoupdate",
+    ]);
+    expect(homebrewAutoupdateAgents("/tmp/home").map((agent) => agent.path)).toEqual([
+      "/tmp/home/Library/LaunchAgents/com.homebrew.autoupdate.plist",
+      "/tmp/home/Library/LaunchAgents/com.github.domt4.homebrew-autoupdate.plist",
+    ]);
   });
 });
 

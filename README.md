@@ -272,6 +272,17 @@ evictl tail evi-claude-code-channels-nukoevi --lines 120
 
 `tail` reads recent tmux pane output for a configured target or evi.
 
+Protect Tailscale from background Homebrew cask upgrades:
+
+```bash
+evictl tailscale protect
+```
+
+`tailscale protect` disables the known Homebrew autoupdate LaunchAgents and
+moves their plist files into `~/Library/LaunchAgents.disabled`. This prevents
+background `brew upgrade` runs from uninstalling or replacing `tailscale-app`
+while the machine is being used as a remote agent host.
+
 Send a task:
 
 ```bash
