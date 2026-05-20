@@ -1,23 +1,24 @@
 # evictl
 
-`evictl` is a local control plane for evi instances: independent agent sessions
-that can run in parallel, receive work through messaging channels, and share
-distilled memory over time.
+`evictl` is a local control plane for always-on AI characters. A character keeps
+the same external presence, channels, and memory while its inner engine can be
+switched between independent agent sessions.
 
-An evi is the always-on AI agent identity. Providers are the execution substrate
-that can host one or more evi replicas. When there is only one substrate, the
-provider and the evi can look identical, but `evictl` keeps the concepts
-separate so the network can clone and supervise replicas across substrates.
+Engines are the execution substrate that can host one or more deployments for a
+character. When there is only one engine, the character and the engine can look
+identical, but `evictl` keeps the concepts separate so the character can move
+between engines without changing its channels or memory.
 
-The initial providers are:
+The initial engines are:
 
 - OpenClaw
 - Hermes Agent
 - Claude Code Channels
 
-The intended shape is a replicated evi control plane: create replicas,
-route work to them, supervise their liveness, collect feedback and observations,
-then distribute distilled memory back to the replicas with provenance.
+The intended shape is a replicated character control plane: create engine
+deployments, route work to them, supervise their liveness, collect feedback and
+observations, then distribute distilled memory back to the deployments with
+provenance.
 
 Research notes: [docs/research-notes.md](docs/research-notes.md)
 
@@ -83,6 +84,8 @@ evictl discover
 evictl import
 evictl status
 evictl doctor
+evictl create
+evictl switch
 evictl target add
 evictl evi add
 evictl evi clone
@@ -137,34 +140,30 @@ evictl route list
 evictl route set telegram:main --target evi-claude-code-channels-demo --account default --mode primary
 ```
 
-Manage swappable interfaces and processors through an identity:
+Create a character, bind interfaces to it, then switch the engine inside it:
 
 ```bash
-evictl identity add demo --profile demo --memory-scope demo
+evictl create demo
 evictl interface bind telegram:main demo --kind telegram --address main
 evictl interface bind discord:main demo --kind discord --address main
 evictl interface bind mqtt:demo/inbox demo --kind mqtt --address demo/inbox
 evictl processor bind demo --id evi-hermes-agent-grok
 evictl processor list demo
 evictl processor list demo --json
-evictl processor switch demo --provider hermes-agent --profile demo
+evictl switch --character demo --engine hermes-agent
 evictl send demo --text "Run from the active processor."
 ```
 
-Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an identity. The
-identity owns the persona and memory scope, then points at one active processor
-instance. Switching the processor changes the inner execution engine without
-changing the external interface bindings. CLI commands accept explicit processor
-options such as `--provider claude-code-channels --profile demo`,
-`--provider hermes-agent --profile demo`, and `--provider openclaw`.
-Internal evi ids can be used only through `--id` when the provider/profile pair
-is not the clearest selector.
+Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to a character. The
+character keeps the same external presence and memory scope while `switch`
+changes the inner engine. Use `--deployment` only when the same character has
+multiple deployments for one engine.
 
 For Claude Code Channels, `processor launch-plan` renders the channel plugins
-from the identity's active interfaces:
+from the character's active interfaces:
 
 ```bash
-evictl processor switch demo --provider claude-code-channels --profile demo
+evictl switch --character demo --engine claude-code-channels
 evictl processor launch-plan demo
 evictl processor launch-plan demo --json
 ```
@@ -176,7 +175,7 @@ session, or process pattern:
 evictl target add hermes-agent-grok --provider hermes-agent --label ai.hermes.gateway-grok --plist ~/Library/LaunchAgents/ai.hermes.gateway-grok.plist --tmux hermes-agent-grok --process 'hermes_cli.main.*grok'
 ```
 
-Create another evi identity:
+Create another engine deployment:
 
 ```bash
 evictl evi add --provider claude-code-channels --id evi-claude-code-channels-research --profile research --workspace /tmp/research --state-dir /tmp/research-state

@@ -213,9 +213,12 @@ const VALUE_OPTIONS = new Set([
   "--agent",
   "--agent-id",
   "--channel",
+  "--character",
   "--config",
   "--confidence",
   "--description",
+  "--deployment",
+  "--engine",
   "--id",
   "--identity",
   "--interval",
@@ -1262,6 +1265,55 @@ export function resolveProcessorEvi(
   if (matches.length === 1) return matches[0];
   throw new Error(
     `ambiguous processor provider: ${selector} (use --profile or --id; matches: ${matches.map(processorLabel).sort().join(", ")})`,
+  );
+}
+
+function deploymentMatches(evi: Evi, deployment: string): boolean {
+  if (!deployment) return true;
+  return [
+    evi.profile,
+    evi.agentId,
+    evi.sessionId,
+    evi.eviId,
+  ].filter(Boolean).includes(deployment);
+}
+
+function characterEngineScore(evi: Evi, character: Identity): number {
+  const characterId = character.identityId;
+  if (evi.eviId === character.activeEvi) return 100;
+  if (evi.profile === characterId) return 90;
+  if (evi.agentId === characterId || evi.sessionId === characterId) return 80;
+  if (evi.agentId.includes(characterId) || evi.sessionId.includes(characterId)) return 70;
+  return 0;
+}
+
+export function resolveCharacterEngineEvi(
+  inventory: Inventory,
+  characterId: string,
+  engineArg: string,
+  deployment = "",
+): Evi {
+  const character = inventory.identities[characterId];
+  if (!character) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown character: ${characterId} (known: ${known})`);
+  }
+  const engine = resolveProvider(engineArg);
+  const candidates = Object.values(inventory.evis).filter(
+    (evi) => evi.provider === engine && deploymentMatches(evi, deployment),
+  );
+  if (candidates.length === 0) {
+    const known = Object.values(inventory.evis).map(processorLabel).sort().join(", ");
+    throw new Error(`unknown engine deployment: ${engineArg} (known: ${known})`);
+  }
+  const ranked = candidates
+    .map((evi) => ({ evi, score: characterEngineScore(evi, character) }))
+    .sort((a, b) => b.score - a.score || a.evi.eviId.localeCompare(b.evi.eviId));
+  const bestScore = ranked[0]?.score ?? 0;
+  const best = ranked.filter((item) => item.score === bestScore).map((item) => item.evi);
+  if (best.length === 1) return best[0];
+  throw new Error(
+    `ambiguous engine deployment: ${engineArg} (use --deployment; matches: ${best.map(processorLabel).sort().join(", ")})`,
   );
 }
 
@@ -2455,6 +2507,28 @@ function cmdIdentityAdd(args: string[]): number {
   return 0;
 }
 
+function cmdCreateCharacter(args: string[]): number {
+  const characterId = required(args[0], "create requires a character name");
+  if (optionValue(args, "--profile")) {
+    throw new Error("create does not accept --profile; the character name is the character");
+  }
+  const path = optionValue(args, "--config") ?? configPath();
+  const character: Identity = {
+    identityId: characterId,
+    profile: characterId,
+    memoryScope: optionValue(args, "--memory-scope") ?? optionValue(args, "--memory") ?? characterId,
+    activeEvi: "",
+    description: optionValue(args, "--description") ?? "",
+  };
+  const next = setIdentityConfig(loadConfigData(path), character, hasFlag(args, "--force"));
+  const inventory = loadInventory(next);
+  writeConfigData(path, next);
+  console.log(
+    `character=${character.identityId} memory=${character.memoryScope || "-"} active=${inventory.identities[characterId].activeEvi || "-"}`,
+  );
+  return 0;
+}
+
 function cmdIdentityBind(args: string[]): number {
   const identityId = required(args[0], "identity bind requires an identity id");
   const processor = processorSelectorFromArgs(args, "identity bind");
@@ -2527,6 +2601,34 @@ function cmdIdentitySwitch(args: string[], label: "active" | "processor"): numbe
   writeConfigData(path, result.data);
 
   console.log(`identity=${identityId} ${label}=${result.nextRuntime} id=${result.nextEviId}`);
+  if (statuses.length > 0) printStatuses(statuses);
+  return 0;
+}
+
+function cmdSwitchCharacter(args: string[]): number {
+  if (args[0] && !args[0].startsWith("--")) {
+    throw new Error("switch requires --character <character> and --engine <engine>");
+  }
+  const characterId = required(optionValue(args, "--character"), "switch requires --character <character>");
+  const engine = required(optionValue(args, "--engine"), "switch requires --engine <engine>");
+  const deployment = optionValue(args, "--deployment") ?? "";
+  const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const inventory = loadInventory(data);
+  const evi = resolveCharacterEngineEvi(inventory, characterId, engine, deployment);
+  const result = switchIdentityProcessorConfig(data, characterId, `id:${evi.eviId}`);
+  const nextInventory = loadInventory(result.data);
+  const nextEvi = nextInventory.evis[result.nextEviId];
+  const nextTarget = nextInventory.targets[result.nextRuntime];
+  const statuses = nextTarget ? [startAndVerifyTarget(nextTarget)] : [];
+  statuses.push(
+    ...Object.entries(nextInventory.targets)
+      .filter(([runtime]) => runtime !== result.nextRuntime && !runtimeInUse(nextInventory, runtime))
+      .map(([, target]) => stopAndVerifyTarget(target)),
+  );
+  writeConfigData(path, result.data);
+
+  console.log(`character=${characterId} engine=${nextEvi.provider} runtime=${nextEvi.runtime}`);
   if (statuses.length > 0) printStatuses(statuses);
   return 0;
 }
@@ -3077,6 +3179,8 @@ Global options:
   --headless  Run without interactive UI or open-ended waits. Long-running commands must opt into a one-shot form.
 
 Commands:
+  create <character> [--memory-scope <scope>] [--description <text>] [--force]
+  switch --character <character> --engine <engine> [--deployment <name>]
   ps
   discover [--json]
   import [--dry-run] [--json] [--config <path>]
@@ -3148,6 +3252,8 @@ export function main(argv = process.argv.slice(2)): number {
     printHelp();
     return command ? 0 : 1;
   }
+  if (command === "create") return cmdCreateCharacter(args);
+  if (command === "switch") return cmdSwitchCharacter(args);
   if (command === "route" && args[0] === "list") return cmdRouteList();
   if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
   if (command === "target" && args[0] === "add") return cmdTargetAdd(args.slice(1));

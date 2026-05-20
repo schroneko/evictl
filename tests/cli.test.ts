@@ -27,6 +27,7 @@ import {
   promoteMemoryEvents,
   queueTaskEvent,
   readMemoryEvents,
+  resolveCharacterEngineEvi,
   processorSelectorFromArgs,
   resolveProcessorEvi,
   resolveEviTarget,
@@ -479,6 +480,83 @@ describe("routes", () => {
 });
 
 describe("identity routing", () => {
+  test("creates a character from the public create command", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-create-character-test-"));
+    try {
+      const config = join(root, "config.json");
+      expect(main(["create", "demo", "--config", config])).toBe(0);
+      const data = JSON.parse(readFileSync(config, "utf8"));
+      expect(data.identities.demo).toEqual({
+        profile: "demo",
+        memory_scope: "demo",
+        active_evi: "",
+        description: "",
+      });
+      expect(() => main(["create", "demo", "--profile", "demo", "--config", config])).toThrow(
+        "create does not accept --profile",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("resolves a character engine without profile input", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-claude-code-channels": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+          profile: "default",
+        },
+        "evi-claude-code-channels-demo": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+          profile: "demo",
+        },
+      },
+      identities: {
+        demo: {
+          profile: "demo",
+          active_evi: "evi-claude-code-channels-demo",
+        },
+      },
+    });
+    expect(resolveCharacterEngineEvi(inventory, "demo", "claude-code-channels").eviId).toBe(
+      "evi-claude-code-channels-demo",
+    );
+    expect(() => main(["switch", "demo", "--engine", "claude-code-channels"])).toThrow(
+      "switch requires --character",
+    );
+  });
+
+  test("requires deployment when a character engine has multiple equal matches", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-claude-code-channels-alpha": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+          profile: "alpha",
+        },
+        "evi-claude-code-channels-beta": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+          profile: "beta",
+        },
+      },
+      identities: {
+        demo: {
+          profile: "demo",
+        },
+      },
+    });
+    expect(() => resolveCharacterEngineEvi(inventory, "demo", "claude-code-channels")).toThrow(
+      "ambiguous engine deployment",
+    );
+    expect(resolveCharacterEngineEvi(inventory, "demo", "claude-code-channels", "beta").eviId).toBe(
+      "evi-claude-code-channels-beta",
+    );
+  });
+
   test("sets identity and interface config data", () => {
     const identity: Identity = {
       identityId: "demo",
