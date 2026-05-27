@@ -45,7 +45,7 @@ Local runtime inspection:
 ```bash
 evictl ps
 evictl discover --json
-evictl import --dry-run --json
+evictl migration --dry-run --json
 evictl status
 evictl doctor
 evictl route list
@@ -60,6 +60,10 @@ evictl tail <target-or-evi>
   `route set --force`, and non-queued `send` as runtime-affecting commands.
 - Use `--dry-run`, `--json`, or `--queue-only` when validating behavior without
   changing active agent sessions.
+- Use `evictl migration --dry-run` to inspect existing Hermes Agent, OpenClaw,
+  and Claude Code Channels instances without changing config.
+- `evictl migration` writes evictl config only. It adopts existing runtimes and
+  does not convert, delete, or move provider-native state.
 - Do not store API keys, Telegram bot tokens, private prompts, or chat ids in
   `~/.config/evictl/config.json`.
 - Before publishing, run dependency audit and secret scans.

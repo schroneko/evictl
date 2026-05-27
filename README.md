@@ -102,8 +102,8 @@ answers for it.
 What the setup commands do:
 
 - `evictl create demo` creates the character record.
-- `evictl migration --dry-run` shows existing Hermes Agent, OpenClaw, and Claude Code Channels instances that can be adopted.
-- `evictl migration` writes those existing instances into `~/.config/evictl/config.json`.
+- `evictl migration --dry-run` shows existing Hermes Agent, OpenClaw, and Claude Code Channels instances that can be adopted by evictl.
+- `evictl migration` writes those existing instances into `~/.config/evictl/config.json` without converting provider-native state.
 - `evictl engine list --character demo` shows which engines are available.
 - `evictl switch --character demo --engine claude-code-channels` changes the inner engine.
 - `evictl status` shows what is running.
@@ -112,6 +112,14 @@ What the setup commands do:
 does not delete provider files, move native memory, download anything, or create
 a remote account. `import` remains available as the lower-level non-guided
 registration command.
+
+In evictl, migration means adoption into the evictl control plane. It discovers
+existing launchd, tmux, process, channel, and native memory locations, then
+records them as evictl targets, evis, interfaces, and routes. It is not a
+Hermes Agent to OpenClaw conversion tool and it does not copy sessions, logs,
+credentials, or provider-owned memory into another runtime. Use `switch` to
+change the active runtime for a character, and use `memory sync` to replicate
+shared memory between runtime-native stores.
 
 ```bash
 evictl switch --character demo --engine hermes-agent
@@ -295,10 +303,16 @@ environment, but does not invent provider-specific setup commands.
 instances into evictl without converting or deleting provider-native files. It
 absorbs runtime differences by recording each instance as an evi, preserving its
 native memory location, and mapping any running channel owner as a primary route.
+It also preserves provider-owned sessions, logs, credentials, indexes, and
+memory stores in place.
 Stopped runtimes are kept as processor candidates through their evi entries, but
 are not imported as routes. Processor switching keeps only the selected active
 processor route, so old processors stay selectable without receiving channel
 traffic.
+
+Runtime conversion is not part of `migration`. `switch` changes which adopted
+runtime answers for a character. `memory sync` is the separate command that
+writes evictl-managed shared memory sections into provider-visible memory sinks.
 
 `import` uses the same discovery and config merge path as `migration`, but keeps
 the older compact output for scripts.

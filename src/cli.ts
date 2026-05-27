@@ -3843,8 +3843,9 @@ Setup commands:
       Show local engines that evictl can import.
   migration [--dry-run] [--json] [--config <path>]
       Adopt existing Hermes Agent, OpenClaw, and Claude Code Channels instances into evictl.
+      Does not convert or delete provider-native files.
   import [--dry-run] [--json] [--config <path>]
-      Register local engine setup into evictl config.
+      Lower-level registration command for scripts.
   interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
       Connect a channel such as Telegram to a character.
   channel telegram install
