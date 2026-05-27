@@ -56,17 +56,24 @@ command-specific `--json` flags where available.
 `evictl` currently targets macOS and requires Bun because the published CLI entry
 uses a Bun shebang.
 
+Install the published package:
+
 ```bash
-bunx evictl --help
 bun install -g evictl
 ```
 
-For local development:
+Install the latest local checkout:
 
 ```bash
-bun link
+bun install -g /Users/username/ghq/github.com/schroneko/evictl
 evictl --help
 ```
+
+Run the CLI directly during development with `bun run src/cli.ts ps`.
+
+`uv tool install` installs commands from Python packages. `evictl` is a Bun CLI,
+so it is not installable through `uv tool` unless a Python wrapper package is
+added.
 
 ## Agent Skill
 
