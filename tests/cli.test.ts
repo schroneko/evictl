@@ -10,6 +10,7 @@ import {
   type Route,
   appendMemoryEvent,
   bindIdentityProcessorConfig,
+  buildMigrationReport,
   claudeApiEnvContent,
   claudeCodeChannelPluginsFromScript,
   claudeCodeChannelsLaunchAgentPlist,
@@ -1498,6 +1499,53 @@ describe("discovery", () => {
       expect(
         (merged.evis as Record<string, unknown>)["evi-claude-code-channels-default"],
       ).toBeTruthy();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("builds an adoption report for migration without deleting native runtime files", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-migration-report-test-"));
+    try {
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: "~/Library/LaunchAgents/ai.hermes.gateway-demo.plist",
+            data: {
+              Label: "ai.hermes.gateway-demo",
+              ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "demo"],
+              EnvironmentVariables: {
+                HERMES_HOME: join(root, "hermes"),
+              },
+            },
+          },
+          {
+            path: join(root, "ai.openclaw.gateway.plist"),
+            data: {
+              Label: "ai.openclaw.gateway",
+              ProgramArguments: ["openclaw", "--profile", "demo"],
+              WorkingDirectory: join(root, "openclaw", "agent"),
+            },
+          },
+        ],
+        { "hermes-agent": true, openclaw: false },
+      );
+      const report = buildMigrationReport(discovery, join(root, "config.json"));
+      expect(report.willDelete).toEqual([]);
+      expect(report.willWrite).toEqual([join(root, "config.json")]);
+      expect(report.adoptions.map((item) => item.eviId).sort()).toEqual([
+        "evi-hermes-agent-demo",
+        "evi-openclaw-demo",
+      ]);
+      expect(report.adoptions.find((item) => item.runtime === "hermes-agent")?.adoption).toBe(
+        "primary-route",
+      );
+      expect(report.adoptions.find((item) => item.runtime === "openclaw")?.adoption).toBe(
+        "processor-candidate",
+      );
+      expect(
+        report.adoptions.find((item) => item.runtime === "openclaw")?.memoryPolicy,
+      ).toContain("stay native");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

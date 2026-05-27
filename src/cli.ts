@@ -168,6 +168,26 @@ export type Discovery = {
   warnings: string[];
 };
 
+export type MigrationAdoption = {
+  eviId: string;
+  runtime: string;
+  profile: string;
+  adoption: string;
+  routes: string[];
+  memoryPolicy: string;
+  memorySources: string[];
+  memorySinks: string[];
+  preservedSources: DiscoverySource[];
+};
+
+export type MigrationReport = {
+  config: string;
+  willWrite: string[];
+  willDelete: string[];
+  adoptions: MigrationAdoption[];
+  warnings: string[];
+};
+
 export type PlistRecord = {
   path: string;
   data: Record<string, unknown>;
@@ -1282,6 +1302,43 @@ function addOpenClawDiscovery(
   });
 }
 
+function addOpenClawHomeDiscovery(
+  discovery: Discovery,
+  home: string,
+  runningByRuntime: Record<string, boolean>,
+): void {
+  const stateDir = join(home, ".openclaw");
+  if (discovery.targets.openclaw || !existsSync(stateDir)) return;
+  const profile = "default";
+  const eviId = "evi-openclaw-default";
+  const mode = routeMode(runningByRuntime, "openclaw");
+  discovery.targets.openclaw = DEFAULT_TARGETS.openclaw;
+  discovery.evis[eviId] = {
+    eviId,
+    runtime: "openclaw",
+    provider: "openclaw",
+    profile,
+    agentId: "",
+    sessionId: "",
+    workspace: join(stateDir, "agents", profile, "agent"),
+    stateDir,
+    networkId: "default",
+    replicaOf: "",
+    role: "replica",
+    modelProvider: "",
+    model: "",
+    baseUrl: "",
+    env: {},
+  };
+  discovery.sources.push({
+    runtime: "openclaw",
+    kind: "state-dir",
+    path: stateDir,
+    label: profile,
+    status: mode === "primary" ? "primary" : "found",
+  });
+}
+
 function classifyPlist(
   record: PlistRecord,
 ): "hermes-agent" | "claude-code-channels" | "openclaw" | undefined {
@@ -1358,7 +1415,9 @@ export function discoverLocalSetup(): Discovery {
   const runningByRuntime = Object.fromEntries(
     Object.entries(loadTargets()).map(([name, target]) => [name, statusFor(target).running]),
   );
-  return discoverFromPlistRecords(launchAgentRecords(), runningByRuntime);
+  const discovery = discoverFromPlistRecords(launchAgentRecords(), runningByRuntime);
+  addOpenClawHomeDiscovery(discovery, homedir(), runningByRuntime);
+  return discovery;
 }
 
 function targetToConfig(target: Target): Record<string, unknown> {
@@ -2593,6 +2652,69 @@ function printDiscovery(discovery: Discovery): void {
   for (const warning of discovery.warnings) console.error(`warning: ${warning}`);
 }
 
+function memoryPolicyForRuntime(runtime: string): string {
+  if (runtime === "hermes-agent")
+    return "Hermes native MEMORY.md and USER.md stay in the Hermes state dir";
+  if (runtime === "openclaw")
+    return "OpenClaw workspace memory files, index, active memory, and dreaming stay native";
+  if (runtime === "claude-code-channels")
+    return "Claude Code CLAUDE.md and appended prompt memory stay native";
+  return "native runtime memory stays in place";
+}
+
+export function buildMigrationReport(discovery: Discovery, config: string): MigrationReport {
+  const routesByEvi = new Map<string, string[]>();
+  for (const route of Object.values(discovery.routes)) {
+    routesByEvi.set(route.targetEvi, [...(routesByEvi.get(route.targetEvi) ?? []), route.key]);
+  }
+  const adoptions = Object.values(discovery.evis)
+    .sort((a, b) => a.eviId.localeCompare(b.eviId))
+    .map((evi) => {
+      const routes = (routesByEvi.get(evi.eviId) ?? []).sort();
+      const preservedSources = discovery.sources.filter((source) => source.runtime === evi.runtime);
+      return {
+        eviId: evi.eviId,
+        runtime: evi.runtime,
+        profile: evi.profile,
+        adoption: routes.length ? "primary-route" : "processor-candidate",
+        routes,
+        memoryPolicy: memoryPolicyForRuntime(evi.runtime),
+        memorySources: providerMemorySources(evi),
+        memorySinks: providerMemorySinks(evi),
+        preservedSources,
+      };
+    });
+  return {
+    config,
+    willWrite: [config],
+    willDelete: [],
+    adoptions,
+    warnings: discovery.warnings,
+  };
+}
+
+function printMigrationReport(report: MigrationReport): void {
+  console.log("evictl migration");
+  console.log(`config=${report.config}`);
+  console.log(`will_write=${report.willWrite.join(",") || "-"}`);
+  console.log(`will_delete=${report.willDelete.join(",") || "none"}`);
+  for (const adoption of report.adoptions) {
+    console.log(
+      `adopt=${adoption.eviId} runtime=${adoption.runtime} profile=${adoption.profile || "-"} mode=${adoption.adoption}`,
+    );
+    console.log(`  memory=${adoption.memoryPolicy}`);
+    console.log(`  routes=${adoption.routes.join(",") || "-"}`);
+    console.log(`  memory_sources=${adoption.memorySources.map(displayPath).join(",") || "-"}`);
+    console.log(`  memory_sinks=${adoption.memorySinks.map(displayPath).join(",") || "-"}`);
+    for (const source of adoption.preservedSources) {
+      console.log(
+        `  preserve=${source.runtime}:${source.kind} status=${source.status} path=${displayPath(source.path)}`,
+      );
+    }
+  }
+  for (const warning of report.warnings) console.error(`warning: ${warning}`);
+}
+
 function cmdDiscover(args: string[]): number {
   const discovery = discoverLocalSetup();
   if (hasFlag(args, "--json")) {
@@ -2600,6 +2722,24 @@ function cmdDiscover(args: string[]): number {
     return 0;
   }
   printDiscovery(discovery);
+  return 0;
+}
+
+function cmdMigration(args: string[]): number {
+  const path = optionValue(args, "--config") ?? configPath();
+  const dryRun = hasFlag(args, "--dry-run");
+  const asJson = hasFlag(args, "--json");
+  const discovery = discoverLocalSetup();
+  const report = buildMigrationReport(discovery, path);
+  const merged = mergeConfigData(loadConfigData(path), discovery);
+  if (!dryRun) writeConfigData(path, merged);
+  if (asJson) {
+    console.log(JSON.stringify({ migration: report, config: path, dryRun, data: merged }, null, 2));
+  } else {
+    if (!dryRun) console.log(`wrote ${path}`);
+    printMigrationReport(report);
+    if (dryRun) console.log(`dry_run_config=${path}`);
+  }
   return 0;
 }
 
@@ -3701,6 +3841,8 @@ Common commands:
 Setup commands:
   discover [--json]
       Show local engines that evictl can import.
+  migration [--dry-run] [--json] [--config <path>]
+      Adopt existing Hermes Agent, OpenClaw, and Claude Code Channels instances into evictl.
   import [--dry-run] [--json] [--config <path>]
       Register local engine setup into evictl config.
   interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
@@ -3770,6 +3912,7 @@ export function main(argv = process.argv.slice(2)): number {
   const commands: Record<string, Command> = {
     ps: () => cmdPs(),
     discover: cmdDiscover,
+    migration: cmdMigration,
     import: cmdImport,
     status: cmdStatus,
     targets: () => cmdTargets(),

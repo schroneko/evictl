@@ -89,8 +89,8 @@ with the character name they want to control.
 
 ```bash
 evictl create demo
-evictl import --dry-run
-evictl import
+evictl migration --dry-run
+evictl migration
 evictl engine list --character demo
 evictl switch --character demo --engine claude-code-channels
 evictl status
@@ -102,14 +102,16 @@ answers for it.
 What the setup commands do:
 
 - `evictl create demo` creates the character record.
-- `evictl import --dry-run` shows local engines that can be registered.
-- `evictl import` writes those local engines into `~/.config/evictl/config.json`.
+- `evictl migration --dry-run` shows existing Hermes Agent, OpenClaw, and Claude Code Channels instances that can be adopted.
+- `evictl migration` writes those existing instances into `~/.config/evictl/config.json`.
 - `evictl engine list --character demo` shows which engines are available.
 - `evictl switch --character demo --engine claude-code-channels` changes the inner engine.
 - `evictl status` shows what is running.
 
-`import` only reads local setup on this Mac. It does not download anything and
-does not create a remote account.
+`migration` only reads local setup on this Mac and writes the evictl config. It
+does not delete provider files, move native memory, download anything, or create
+a remote account. `import` remains available as the lower-level non-guided
+registration command.
 
 ```bash
 evictl switch --character demo --engine hermes-agent
@@ -208,6 +210,8 @@ Import the current local setup:
 
 ```bash
 evictl discover
+evictl migration --dry-run
+evictl migration
 evictl import --dry-run
 evictl import
 ```
@@ -287,11 +291,17 @@ the inventory records the desired replica, provider, network, workspace,
 state dir, agent id, session id, model provider, model, base URL, and runtime
 environment, but does not invent provider-specific setup commands.
 
-The importer reads launchd setup for Hermes Agent, Claude Code Channels, and
-OpenClaw. Running runtimes are imported as `primary` routes. Stopped runtimes are
-kept as processor candidates through their evi entries, but are not imported as
-routes. Processor switching keeps only the selected active processor route, so
-old processors stay selectable without receiving channel traffic.
+`migration` adopts existing Hermes Agent, OpenClaw, and Claude Code Channels
+instances into evictl without converting or deleting provider-native files. It
+absorbs runtime differences by recording each instance as an evi, preserving its
+native memory location, and mapping any running channel owner as a primary route.
+Stopped runtimes are kept as processor candidates through their evi entries, but
+are not imported as routes. Processor switching keeps only the selected active
+processor route, so old processors stay selectable without receiving channel
+traffic.
+
+`import` uses the same discovery and config merge path as `migration`, but keeps
+the older compact output for scripts.
 
 `route set` refuses duplicate `primary` ownership for the same
 channel/account/peer unless `--force` is passed.
