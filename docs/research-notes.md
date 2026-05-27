@@ -216,7 +216,8 @@ enriches the proposal with safe local state files:
   `gateway_state.json`, and `sessions/sessions.json`
 - Claude Code Channels: launchd plist plus the local `start.sh` wrapper, including
   tmux session name and Claude `--name`
-- OpenClaw: launchd plist or `~/.openclaw` when present
+- OpenClaw: launchd plist, `~/.openclaw`, and each
+  `~/.openclaw/agents/*/agent` workspace when present
 
 Imported routes are intentionally broad at the Telegram account level at first.
 That is conservative: it prevents two evi runtimes from silently becoming
@@ -224,8 +225,9 @@ primary owners of the same human-facing surface before peer-level routing is
 implemented.
 
 When discovery sees two active primary candidates for the same Telegram account,
-it skips the conflicting routes and emits a warning. A human or later
-`processor switch` or `route set` command must choose the owner explicitly.
+it skips the conflicting routes and emits a warning. `evictl migration` can
+restore one selected route interactively or through `--primary-route`; later
+`processor switch` or `route set` commands can also choose the owner explicitly.
 
 ## Shared memory event notes
 
@@ -259,6 +261,7 @@ is useful for testing and for evi entries that are not live yet.
 
 - `evictl ps`
 - `evictl discover`
+- `evictl migration`
 - `evictl import`
 - `evictl status`
 - `evictl doctor`
@@ -271,7 +274,7 @@ is useful for testing and for evi entries that are not live yet.
 - `evictl sync`
 - `evictl memory search`
 - `evictl memory export`
-- `evictl memory import`
+- `evictl memory sync`
 - `evictl memory promote`
 - `evictl feedback`
 - `evictl inspect`

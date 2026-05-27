@@ -64,6 +64,8 @@ evictl tail <target-or-evi>
   and Claude Code Channels instances without changing config.
 - `evictl migration` writes evictl config only. It adopts existing runtimes and
   does not convert, delete, or move provider-native state.
+- Use `evictl migration --yes` for non-interactive adoption. Add
+  `--primary-route <route-key>` when the dry run reports route conflicts.
 - Do not store API keys, Telegram bot tokens, private prompts, or chat ids in
   `~/.config/evictl/config.json`.
 - Before publishing, run dependency audit and secret scans.

@@ -121,6 +121,12 @@ credentials, or provider-owned memory into another runtime. Use `switch` to
 change the active runtime for a character, and use `memory sync` to replicate
 shared memory between runtime-native stores.
 
+When run from a terminal, `evictl migration` asks for confirmation before
+writing config. If two runtimes already own the same channel surface, it asks
+which discovered route should become primary. For automation, use `--yes` to
+accept the non-destructive config write and `--primary-route <route-key>` to
+select the primary route explicitly.
+
 ```bash
 evictl switch --character demo --engine hermes-agent
 evictl switch --character demo --engine openclaw
@@ -310,6 +316,11 @@ are not imported as routes. Processor switching keeps only the selected active
 processor route, so old processors stay selectable without receiving channel
 traffic.
 
+If OpenClaw has multiple workspaces under `~/.openclaw/agents/*/agent`,
+`migration` adopts each workspace as its own OpenClaw evi. Each adopted evi gets
+a memory provider policy in config that records native state as preserved and
+evictl shared memory as a managed section written only by `memory sync`.
+
 Runtime conversion is not part of `migration`. `switch` changes which adopted
 runtime answers for a character. `memory sync` is the separate command that
 writes evictl-managed shared memory sections into provider-visible memory sinks.
@@ -472,7 +483,23 @@ Example:
   },
   "memory": {
     "event_log": "~/.local/share/evictl/events.jsonl",
-    "compiled_notes": "~/.local/share/evictl/memory"
+    "compiled_notes": "~/.local/share/evictl/memory",
+    "provider_policies": {
+      "evi-claude-code-channels-demo": {
+        "native_state": "preserve",
+        "sync_strategy": "managed-section",
+        "description": "Claude Code CLAUDE.md and appended prompt memory stay native",
+        "sources": [
+          "~/Documents/claude-code-channels/CLAUDE.md",
+          "~/Documents/claude-code-channels/.claude/CLAUDE.md",
+          "~/Documents/claude-code-channels/CLAUDE.local.md",
+          "~/.local/share/claude-code-channels/evictl-network-memory.md"
+        ],
+        "sinks": [
+          "~/.local/share/claude-code-channels/evictl-network-memory.md"
+        ]
+      }
+    }
   }
 }
 ```

@@ -9,6 +9,7 @@ import {
   type InterfaceBinding,
   type Route,
   appendMemoryEvent,
+  applyPrimaryRouteSelections,
   bindIdentityProcessorConfig,
   buildMigrationReport,
   claudeApiEnvContent,
@@ -22,6 +23,7 @@ import {
   createFeedbackEvent,
   createTaskEvent,
   discoverFromPlistRecords,
+  discoverOpenClawHome,
   duplicatePrimaryRoutes,
   homebrewAutoupdateAgents,
   loadInventory,
@@ -1546,6 +1548,90 @@ describe("discovery", () => {
       expect(
         report.adoptions.find((item) => item.runtime === "openclaw")?.memoryPolicy,
       ).toContain("stay native");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("records memory policies when merging migrated runtime setup", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-memory-policy-test-"));
+    try {
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: join(root, "ai.hermes.gateway-demo.plist"),
+            data: {
+              Label: "ai.hermes.gateway-demo",
+              ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "demo"],
+              EnvironmentVariables: {
+                HERMES_HOME: join(root, "hermes"),
+              },
+            },
+          },
+        ],
+        { "hermes-agent": true },
+      );
+      const merged = mergeConfigData({}, discovery);
+      const memory = merged.memory as Record<string, unknown>;
+      const policies = memory.provider_policies as Record<string, Record<string, unknown>>;
+      expect(policies["evi-hermes-agent-demo"].native_state).toBe("preserve");
+      expect(policies["evi-hermes-agent-demo"].sync_strategy).toBe("managed-section");
+      expect(policies["evi-hermes-agent-demo"].sources).toContain(
+        join(root, "hermes", "memories", "MEMORY.md"),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("restores a selected primary route from migration conflicts", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-conflict-selection-test-"));
+    try {
+      const discovery = discoverFromPlistRecords(
+        [
+          {
+            path: "~/Library/LaunchAgents/ai.hermes.gateway-demo.plist",
+            data: {
+              Label: "ai.hermes.gateway-demo",
+              ProgramArguments: ["python", "-m", "hermes_cli.main", "--profile", "demo"],
+            },
+          },
+          {
+            path: join(root, "com.local.claude-code-channels.plist"),
+            data: {
+              Label: "com.local.claude-code-channels",
+              ProgramArguments: ["/bin/zsh", join(root, "start.sh")],
+            },
+          },
+        ],
+        { "claude-code-channels": true, "hermes-agent": true },
+      );
+      const selected = applyPrimaryRouteSelections(discovery, [
+        "telegram:claude-code-channels:default",
+      ]);
+      expect(selected.routes["telegram:claude-code-channels:default"].targetEvi).toBe(
+        "evi-claude-code-channels-default",
+      );
+      expect(buildMigrationReport(selected, join(root, "config.json")).conflicts).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("discovers multiple OpenClaw agent workspaces from the home directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-openclaw-home-test-"));
+    try {
+      mkdirSync(join(root, ".openclaw", "agents", "alpha", "agent"), { recursive: true });
+      mkdirSync(join(root, ".openclaw", "agents", "beta", "agent"), { recursive: true });
+      const discovery = discoverOpenClawHome(root, { openclaw: false });
+      expect(Object.keys(discovery.evis).sort()).toEqual([
+        "evi-openclaw-alpha",
+        "evi-openclaw-beta",
+      ]);
+      expect(discovery.evis["evi-openclaw-alpha"].workspace).toBe(
+        join(root, ".openclaw", "agents", "alpha", "agent"),
+      );
+      expect(discovery.sources.filter((source) => source.kind === "agent-workspace")).toHaveLength(2);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

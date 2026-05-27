@@ -5,10 +5,13 @@ import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   statSync,
   writeFileSync,
@@ -166,6 +169,12 @@ export type Discovery = {
   };
   sources: DiscoverySource[];
   warnings: string[];
+  conflicts: RouteConflict[];
+};
+
+export type RouteConflict = {
+  owner: string;
+  routes: Route[];
 };
 
 export type MigrationAdoption = {
@@ -186,6 +195,7 @@ export type MigrationReport = {
   willDelete: string[];
   adoptions: MigrationAdoption[];
   warnings: string[];
+  conflicts: RouteConflict[];
 };
 
 export type PlistRecord = {
@@ -260,6 +270,7 @@ const VALUE_OPTIONS = new Set([
   "--provider",
   "--process",
   "--processor",
+  "--primary-route",
   "--query",
   "--replica-of",
   "--role",
@@ -655,6 +666,7 @@ function defaultDiscovery(): Discovery {
     },
     sources: [],
     warnings: [],
+    conflicts: [],
   };
 }
 
@@ -1264,6 +1276,7 @@ function addOpenClawDiscovery(
   const args = plistArgs(record.data);
   const profile = profileFromArgs(args) ?? "default";
   const eviId = `evi-openclaw-${slug(profile)}`;
+  const stateDir = join(homedir(), ".openclaw");
   discovery.targets.openclaw = targetWithPlist("openclaw", record.data, record.path);
   discovery.evis[eviId] = {
     eviId,
@@ -1272,8 +1285,8 @@ function addOpenClawDiscovery(
     profile,
     agentId: "",
     sessionId: "",
-    workspace: plistWorkingDirectory(record.data),
-    stateDir: join(homedir(), ".openclaw"),
+    workspace: plistWorkingDirectory(record.data) || join(stateDir, "agents", profile, "agent"),
+    stateDir,
     networkId: "default",
     replicaOf: "",
     role: "replica",
@@ -1302,41 +1315,86 @@ function addOpenClawDiscovery(
   });
 }
 
+function directoryExists(path: string): boolean {
+  try {
+    return existsSync(path) && statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function openClawAgentWorkspaces(stateDir: string): Array<{ profile: string; workspace: string }> {
+  const agentsDir = join(stateDir, "agents");
+  if (!directoryExists(agentsDir)) return [];
+  return readdirSync(agentsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => ({
+      profile: entry.name,
+      workspace: join(agentsDir, entry.name, "agent"),
+    }))
+    .filter((agent) => directoryExists(agent.workspace))
+    .sort((a, b) => a.profile.localeCompare(b.profile));
+}
+
 function addOpenClawHomeDiscovery(
   discovery: Discovery,
   home: string,
   runningByRuntime: Record<string, boolean>,
 ): void {
   const stateDir = join(home, ".openclaw");
-  if (discovery.targets.openclaw || !existsSync(stateDir)) return;
-  const profile = "default";
-  const eviId = "evi-openclaw-default";
+  if (!directoryExists(stateDir)) return;
+  if (!discovery.targets.openclaw) discovery.targets.openclaw = DEFAULT_TARGETS.openclaw;
   const mode = routeMode(runningByRuntime, "openclaw");
-  discovery.targets.openclaw = DEFAULT_TARGETS.openclaw;
-  discovery.evis[eviId] = {
-    eviId,
-    runtime: "openclaw",
-    provider: "openclaw",
-    profile,
-    agentId: "",
-    sessionId: "",
-    workspace: join(stateDir, "agents", profile, "agent"),
-    stateDir,
-    networkId: "default",
-    replicaOf: "",
-    role: "replica",
-    modelProvider: "",
-    model: "",
-    baseUrl: "",
-    env: {},
-  };
+  const agents = openClawAgentWorkspaces(stateDir);
+  const candidates = agents.length
+    ? agents
+    : [{ profile: "default", workspace: join(stateDir, "agents", "default", "agent") }];
+  for (const candidate of candidates) {
+    const eviId = `evi-openclaw-${slug(candidate.profile)}`;
+    if (discovery.evis[eviId]) continue;
+    discovery.evis[eviId] = {
+      eviId,
+      runtime: "openclaw",
+      provider: "openclaw",
+      profile: candidate.profile,
+      agentId: candidate.profile,
+      sessionId: "",
+      workspace: candidate.workspace,
+      stateDir,
+      networkId: "default",
+      replicaOf: "",
+      role: "replica",
+      modelProvider: "",
+      model: "",
+      baseUrl: "",
+      env: {},
+    };
+    if (agents.length) {
+      discovery.sources.push({
+        runtime: "openclaw",
+        kind: "agent-workspace",
+        path: candidate.workspace,
+        label: candidate.profile,
+        status: mode === "primary" ? "primary" : "found",
+      });
+    }
+  }
   discovery.sources.push({
     runtime: "openclaw",
     kind: "state-dir",
     path: stateDir,
-    label: profile,
+    label: "openclaw",
     status: mode === "primary" ? "primary" : "found",
   });
+}
+
+export function discoverOpenClawHome(
+  home: string,
+  runningByRuntime: Record<string, boolean> = {},
+): Discovery {
+  const discovery = defaultDiscovery();
+  addOpenClawHomeDiscovery(discovery, home, runningByRuntime);
+  return discovery;
 }
 
 function classifyPlist(
@@ -1365,11 +1423,37 @@ function classifyPlist(
 function demoteDuplicatePrimaryRoutes(discovery: Discovery): void {
   const conflicts = duplicatePrimaryRoutes(discovery.routes);
   for (const [owner, routes] of conflicts) {
+    discovery.conflicts.push({
+      owner,
+      routes: routes.map((item) => ({ ...item })),
+    });
     for (const route of routes) delete discovery.routes[route.key];
     discovery.warnings.push(
       `route conflict ${ownerLabel(owner)} skipped: ${routes.map((route) => route.key).join(", ")}`,
     );
   }
+}
+
+export function applyPrimaryRouteSelections(
+  discovery: Discovery,
+  selections: string[],
+): Discovery {
+  const selected = new Set(selections);
+  const next: Discovery = {
+    ...discovery,
+    routes: { ...discovery.routes },
+    warnings: [...discovery.warnings],
+  };
+  for (const conflict of discovery.conflicts) {
+    if (selected.size === 0) continue;
+    const route = conflict.routes.find((item) => selected.has(item.key));
+    if (!route) continue;
+    next.routes[route.key] = { ...route };
+    next.warnings = next.warnings.filter(
+      (warning) => !warning.includes(`route conflict ${ownerLabel(conflict.owner)} skipped`),
+    );
+  }
+  return next;
 }
 
 export function discoverFromPlistRecords(
@@ -1467,6 +1551,16 @@ function eviToConfig(evi: Evi): Record<string, unknown> {
     model: evi.model,
     base_url: evi.baseUrl,
     env: evi.env,
+  };
+}
+
+function eviMemoryPolicyConfig(evi: Evi): Record<string, unknown> {
+  return {
+    native_state: "preserve",
+    sync_strategy: "managed-section",
+    description: memoryPolicyForRuntime(evi.runtime),
+    sources: providerMemorySources(evi),
+    sinks: providerMemorySinks(evi),
   };
 }
 
@@ -1891,10 +1985,18 @@ export function mergeConfigData(
     interfaces[key] = interfaceToConfig(binding);
   const routes = { ...objectValue(existing.routes) };
   for (const [key, route] of Object.entries(discovery.routes)) routes[key] = routeToConfig(route);
+  const existingMemory = objectValue(existing.memory);
+  const providerPolicies = Object.fromEntries(
+    Object.entries(discovery.evis).map(([eviId, evi]) => [eviId, eviMemoryPolicyConfig(evi)]),
+  );
   const memory = {
     event_log: discovery.memory.eventLog,
     compiled_notes: discovery.memory.compiledNotes,
-    ...objectValue(existing.memory),
+    ...existingMemory,
+    provider_policies: {
+      ...providerPolicies,
+      ...objectValue(existingMemory.provider_policies ?? existingMemory.providerPolicies),
+    },
   };
   return {
     ...existing,
@@ -2667,6 +2769,9 @@ export function buildMigrationReport(discovery: Discovery, config: string): Migr
   for (const route of Object.values(discovery.routes)) {
     routesByEvi.set(route.targetEvi, [...(routesByEvi.get(route.targetEvi) ?? []), route.key]);
   }
+  const unresolvedConflicts = discovery.conflicts.filter(
+    (conflict) => !conflict.routes.some((route) => discovery.routes[route.key]),
+  );
   const adoptions = Object.values(discovery.evis)
     .sort((a, b) => a.eviId.localeCompare(b.eviId))
     .map((evi) => {
@@ -2690,6 +2795,7 @@ export function buildMigrationReport(discovery: Discovery, config: string): Migr
     willDelete: [],
     adoptions,
     warnings: discovery.warnings,
+    conflicts: unresolvedConflicts,
   };
 }
 
@@ -2712,7 +2818,64 @@ function printMigrationReport(report: MigrationReport): void {
       );
     }
   }
+  for (const conflict of report.conflicts) {
+    console.log(
+      `conflict=${ownerLabel(conflict.owner)} routes=${conflict.routes.map((route) => route.key).join(",")}`,
+    );
+  }
   for (const warning of report.warnings) console.error(`warning: ${warning}`);
+}
+
+function promptLine(question: string): string {
+  if (!process.stdin.isTTY) return "";
+  const fd = openSync("/dev/tty", "r");
+  try {
+    process.stdout.write(question);
+    const buffer = Buffer.alloc(1024);
+    const bytes = readSync(fd, buffer, 0, buffer.length, null);
+    return buffer.toString("utf8", 0, bytes).trim();
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function confirmMigrationWrite(path: string, args: string[], asJson: boolean): boolean {
+  if (hasFlag(args, "--yes") || asJson || !process.stdin.isTTY) return true;
+  return /^y(es)?$/i.test(promptLine(`Write evictl migration config to ${path}? [y/N] `));
+}
+
+function selectedPrimaryRoutesFromArgs(args: string[], discovery: Discovery): string[] {
+  const selections = optionValues(args, "--primary-route");
+  if (selections.length === 0) return [];
+  const known = new Set(discovery.conflicts.flatMap((conflict) => conflict.routes.map((route) => route.key)));
+  const unknown = selections.filter((selection) => !known.has(selection));
+  if (unknown.length > 0) {
+    throw new Error(`unknown --primary-route: ${unknown.join(", ")}`);
+  }
+  return selections;
+}
+
+function promptPrimaryRouteSelections(discovery: Discovery, args: string[], asJson: boolean): string[] {
+  const selections = selectedPrimaryRoutesFromArgs(args, discovery);
+  if (selections.length > 0 || discovery.conflicts.length === 0) return selections;
+  if (hasFlag(args, "--dry-run")) return [];
+  if (hasFlag(args, "--yes")) return [];
+  if (asJson) return [];
+  if (!process.stdin.isTTY) {
+    throw new Error("route conflict requires --primary-route <route-key> or --dry-run");
+  }
+  const chosen: string[] = [];
+  for (const conflict of discovery.conflicts) {
+    console.log(`route conflict ${ownerLabel(conflict.owner)}`);
+    conflict.routes.forEach((route, index) => {
+      console.log(`  ${index + 1}. ${route.key} -> ${route.targetEvi}`);
+    });
+    console.log("  0. keep none");
+    const answer = promptLine("Choose primary route [0]: ");
+    const index = Number.parseInt(answer || "0", 10);
+    if (index > 0 && index <= conflict.routes.length) chosen.push(conflict.routes[index - 1].key);
+  }
+  return chosen;
 }
 
 function cmdDiscover(args: string[]): number {
@@ -2725,20 +2888,36 @@ function cmdDiscover(args: string[]): number {
   return 0;
 }
 
-function cmdMigration(args: string[]): number {
+function cmdMigration(args: string[], options: GlobalOptions = DEFAULT_GLOBAL_OPTIONS): number {
   const path = optionValue(args, "--config") ?? configPath();
   const dryRun = hasFlag(args, "--dry-run");
   const asJson = hasFlag(args, "--json");
-  const discovery = discoverLocalSetup();
+  const rawDiscovery = discoverLocalSetup();
+  if (
+    options.headless &&
+    !dryRun &&
+    rawDiscovery.conflicts.length > 0 &&
+    optionValues(args, "--primary-route").length === 0 &&
+    !hasFlag(args, "--yes")
+  ) {
+    throw new Error("migration --headless requires --primary-route when route conflicts exist");
+  }
+  const discovery = applyPrimaryRouteSelections(
+    rawDiscovery,
+    promptPrimaryRouteSelections(rawDiscovery, args, asJson),
+  );
   const report = buildMigrationReport(discovery, path);
   const merged = mergeConfigData(loadConfigData(path), discovery);
-  if (!dryRun) writeConfigData(path, merged);
   if (asJson) {
     console.log(JSON.stringify({ migration: report, config: path, dryRun, data: merged }, null, 2));
   } else {
-    if (!dryRun) console.log(`wrote ${path}`);
     printMigrationReport(report);
     if (dryRun) console.log(`dry_run_config=${path}`);
+  }
+  if (!dryRun) {
+    if (!confirmMigrationWrite(path, args, asJson)) return 1;
+    writeConfigData(path, merged);
+    if (!asJson) console.log(`wrote ${path}`);
   }
   return 0;
 }
@@ -3844,6 +4023,7 @@ Setup commands:
   migration [--dry-run] [--json] [--config <path>]
       Adopt existing Hermes Agent, OpenClaw, and Claude Code Channels instances into evictl.
       Does not convert or delete provider-native files.
+      Use --yes for non-interactive apply and --primary-route <route> to resolve route conflicts.
   import [--dry-run] [--json] [--config <path>]
       Lower-level registration command for scripts.
   interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
