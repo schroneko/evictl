@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -753,6 +754,283 @@ export function claudeCodeChannelsLaunchPlan(
       allowedChannelPlugins: channels,
     },
   };
+}
+
+export type ClaudeCodeChannelsStartScriptOptions = {
+  identityId: string;
+  sessionName: string;
+  workspace: string;
+  channel: ClaudeCodeChannelPlugin;
+  env: Record<string, string>;
+  envFile: string;
+  dangerouslySkipPermissions: boolean;
+};
+
+export type ClaudeCodeChannelsLaunchAgentOptions = {
+  label: string;
+  startScript: string;
+  stdoutPath: string;
+  stderrPath: string;
+};
+
+export type ClaudeCodeChannelsAuthType =
+  | "anthropic-api-key"
+  | "claude-code-oauth"
+  | "none";
+
+export type ClaudeCodeChannelsAuthStatus = {
+  authType: ClaudeCodeChannelsAuthType;
+  configured: boolean;
+  source: string;
+  envFile: string;
+  notes: string[];
+};
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function claudeCodeChannelsStartScript(
+  options: ClaudeCodeChannelsStartScriptOptions,
+): string {
+  const args = [
+    "--name",
+    `${options.identityId}-${options.channel.plugin}`,
+    "--channels",
+    `plugin:${options.channel.plugin}@${options.channel.marketplace}`,
+  ];
+  if (options.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+  const claudeArgLines = args.map((arg) => `  ${shellQuote(arg)}`);
+  const tmuxEnvKeys = Array.from(
+    new Set(["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", ...Object.keys(options.env).sort()]),
+  );
+  const tmuxEnvKeyLines = tmuxEnvKeys.map((key) => `  ${shellQuote(key)}`);
+  const envLines = Object.entries(options.env)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `export ${key}=${shellQuote(value)}`);
+  return [
+    "#!/bin/zsh",
+    "set -eu",
+    'export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
+    `session_name=${shellQuote(options.sessionName)}`,
+    `workdir=${shellQuote(options.workspace)}`,
+    `env_file=${shellQuote(options.envFile)}`,
+    'telegram_env_file="$HOME/.claude/channels/telegram/.env"',
+    'if [ -f "$env_file" ]',
+    "then",
+    "  set -a",
+    '  source "$env_file"',
+    "  set +a",
+    "fi",
+    'if [ -f "$telegram_env_file" ]',
+    "then",
+    "  set -a",
+    '  source "$telegram_env_file"',
+    "  set +a",
+    "fi",
+    ...envLines,
+    "claude_args=(",
+    "  'claude'",
+    ")",
+    'if [ -n "${ANTHROPIC_API_KEY:-}" ]',
+    "then",
+    "  claude_args+=('--bare')",
+    "fi",
+    "claude_args+=(",
+    ...claudeArgLines,
+    ")",
+    "tmux_env_args=()",
+    "tmux_env_keys=(",
+    ...tmuxEnvKeyLines,
+    ")",
+    'for key in "${tmux_env_keys[@]}"',
+    "do",
+    '  if [ -n "${(P)key:-}" ]',
+    "  then",
+    '    tmux_env_args+=(-e "$key=${(P)key}")',
+    "  fi",
+    "done",
+    'command="exec ${claude_args[*]}"',
+    'if tmux has-session -t "$session_name" 2>/dev/null',
+    "then",
+    "  exit 0",
+    "fi",
+    'tmux new-session -d -s "$session_name" "${tmux_env_args[@]}" -c "$workdir" -- "$command"',
+    "",
+  ].join("\n");
+}
+
+function plistEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function claudeCodeChannelsLaunchAgentPlist(
+  options: ClaudeCodeChannelsLaunchAgentOptions,
+): string {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    "<dict>",
+    "  <key>Label</key>",
+    `  <string>${plistEscape(options.label)}</string>`,
+    "  <key>ProgramArguments</key>",
+    "  <array>",
+    "    <string>/bin/zsh</string>",
+    `    <string>${plistEscape(options.startScript)}</string>`,
+    "  </array>",
+    "  <key>RunAtLoad</key>",
+    "  <true/>",
+    "  <key>StandardOutPath</key>",
+    `  <string>${plistEscape(options.stdoutPath)}</string>`,
+    "  <key>StandardErrorPath</key>",
+    `  <string>${plistEscape(options.stderrPath)}</string>`,
+    "</dict>",
+    "</plist>",
+    "",
+  ].join("\n");
+}
+
+export function telegramEnvContent(token: string): string {
+  return `TELEGRAM_BOT_TOKEN=${shellQuote(token.trim())}\n`;
+}
+
+export function claudeApiEnvContent(apiKey: string): string {
+  return `ANTHROPIC_API_KEY=${shellQuote(apiKey.trim())}\n`;
+}
+
+function envFileHasAssignment(path: string, name: string): boolean {
+  if (!existsSync(path)) return false;
+  const content = readFileSync(path, "utf8");
+  return new RegExp(`(^|\\n)\\s*(export\\s+)?${name}=`).test(content);
+}
+
+export function claudeAuthStatusFromOutput(result: RunResult): ClaudeCodeChannelsAuthStatus {
+  const output = `${result.stdout}\n${result.stderr}`.trim();
+  const loggedIn =
+    result.code === 0 &&
+    (/\blogged\s+in\b/i.test(output) ||
+      /\bauthMethod\b/i.test(output) ||
+      /\bclaude\.ai\b/i.test(output));
+  return {
+    authType: loggedIn ? "claude-code-oauth" : "none",
+    configured: loggedIn,
+    source: loggedIn ? "claude auth status" : "none",
+    envFile: "",
+    notes: loggedIn ? [] : ["Claude Code login was not detected"],
+  };
+}
+
+export function resolveClaudeCodeChannelsAuthStatus(options: {
+  envFile: string;
+  env?: NodeJS.ProcessEnv;
+  claudeAuthStatus?: RunResult;
+}): ClaudeCodeChannelsAuthStatus {
+  const env = options.env ?? process.env;
+  const envFile = options.envFile;
+  if (env.ANTHROPIC_API_KEY?.trim()) {
+    return {
+      authType: "anthropic-api-key",
+      configured: true,
+      source: "env:ANTHROPIC_API_KEY",
+      envFile,
+      notes: [],
+    };
+  }
+  if (envFileHasAssignment(envFile, "ANTHROPIC_API_KEY")) {
+    return {
+      authType: "anthropic-api-key",
+      configured: true,
+      source: envFile,
+      envFile,
+      notes: [],
+    };
+  }
+  const claudeStatus = options.claudeAuthStatus
+    ? claudeAuthStatusFromOutput(options.claudeAuthStatus)
+    : claudeAuthStatusFromOutput(run(["claude", "auth", "status"]));
+  return {
+    ...claudeStatus,
+    envFile,
+  };
+}
+
+export function claudeCodeChannelsTelegramConfig(
+  data: Record<string, unknown>,
+  identityId: string,
+  workspace: string,
+  stateDir: string,
+  env: Record<string, string> = {},
+  force = false,
+): Record<string, unknown> {
+  const channel = { plugin: "telegram", marketplace: "claude-plugins-official" };
+  const sessionName = `claude-code-channels-${slug(identityId)}`;
+  const eviId = `evi-claude-code-channels-${slug(identityId)}`;
+  const target: Target = {
+    ...DEFAULT_TARGETS["claude-code-channels"],
+    plist: join(homedir(), "Library", "LaunchAgents", "com.local.claude-code-channels.plist"),
+    tmuxSessions: [sessionName],
+  };
+  let next = setTargetConfig(data, target, force);
+  next = spawnEviConfig(
+    next,
+    {
+      eviId,
+      runtime: "claude-code-channels",
+      provider: "claude-code-channels",
+      profile: identityId,
+      agentId: `${identityId}-${channel.plugin}`,
+      sessionId: sessionName,
+      workspace,
+      stateDir,
+      networkId: "default",
+      replicaOf: "",
+      role: "replica",
+      modelProvider: "",
+      model: "",
+      baseUrl: "",
+      env,
+    },
+    force,
+  );
+  next = setIdentityConfig(
+    next,
+    {
+      identityId,
+      profile: identityId,
+      memoryScope: identityId,
+      activeEvi: eviId,
+      description: "",
+    },
+    force,
+  );
+  next = setInterfaceConfig(
+    next,
+    {
+      key: "telegram:main",
+      kind: "telegram",
+      address: "main",
+      identityId,
+      mode: "primary",
+    },
+    force,
+  );
+  return setRouteConfig(
+    next,
+    {
+      key: `telegram:claude-code-channels:${slug(identityId)}`,
+      channel: "telegram",
+      accountId: "default",
+      peerId: "",
+      targetEvi: eviId,
+      mode: "primary",
+    },
+    force,
+  );
 }
 
 function profileFromClaudeCodeChannels(agentName: string, plugins: ClaudeCodeChannelPlugin[]): string {
@@ -2760,6 +3038,186 @@ function cmdProcessorLaunchPlan(args: string[]): number {
   return 0;
 }
 
+function telegramTokenFromArgs(args: string[]): string {
+  const direct = optionValue(args, "--token");
+  if (direct) return direct;
+  const envName = optionValue(args, "--token-env");
+  if (envName) {
+    const value = process.env[envName];
+    if (!value) throw new Error(`environment variable is empty: ${envName}`);
+    return value;
+  }
+  const file = optionValue(args, "--token-file");
+  if (file) return readFileSync(file, "utf8").trim();
+  if (hasFlag(args, "--token-stdin")) return readFileSync(0, "utf8").trim();
+  throw new Error("channel telegram configure requires --token, --token-env, --token-file, or --token-stdin");
+}
+
+function telegramEnvPath(home = homedir()): string {
+  return join(home, ".claude", "channels", "telegram", ".env");
+}
+
+function claudeChannelsStateDir(home = homedir()): string {
+  return join(home, ".local", "share", "claude-telegram-channel");
+}
+
+function claudeChannelsLaunchAgentPath(home = homedir()): string {
+  return join(home, "Library", "LaunchAgents", "com.local.claude-code-channels.plist");
+}
+
+function claudeApiEnvPath(stateDir = claudeChannelsStateDir()): string {
+  return join(stateDir, "claude.env");
+}
+
+function cmdChannelTelegramInstall(): number {
+  const result = run(["claude", "plugin", "install", "telegram@claude-plugins-official"]);
+  if (result.stdout.trim()) console.log(result.stdout.trim());
+  if (result.stderr.trim()) console.error(result.stderr.trim());
+  return result.code;
+}
+
+function cmdChannelTelegramConfigure(args: string[]): number {
+  const token = telegramTokenFromArgs(args);
+  const envPath = telegramEnvPath();
+  mkdirSync(dirname(envPath), { recursive: true });
+  writeFileSync(envPath, telegramEnvContent(token), { mode: 0o600 });
+  chmodSync(envPath, 0o600);
+  console.log(`telegram_config=${envPath}`);
+  return 0;
+}
+
+function cmdChannelTelegramConfigureAuth(args: string[]): number {
+  const envName = optionValue(args, "--key-env") ?? "ANTHROPIC_API_KEY";
+  const apiKey = process.env[envName];
+  if (!apiKey) throw new Error(`environment variable is empty: ${envName}`);
+  const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
+  const envPath = claudeApiEnvPath(stateDir);
+  mkdirSync(dirname(envPath), { recursive: true });
+  writeFileSync(envPath, claudeApiEnvContent(apiKey), { mode: 0o600 });
+  chmodSync(envPath, 0o600);
+  console.log(`claude_api_config=${envPath}`);
+  console.log(`source_env=${envName}`);
+  return 0;
+}
+
+function cmdChannelTelegramAuth(args: string[]): number {
+  const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
+  const envFile = optionValue(args, "--env-file") ?? claudeApiEnvPath(stateDir);
+  const status = resolveClaudeCodeChannelsAuthStatus({ envFile });
+  if (hasFlag(args, "--json")) {
+    console.log(JSON.stringify(status, null, 2));
+    return 0;
+  }
+  console.log(`auth_type=${status.authType}`);
+  console.log(`configured=${status.configured ? "yes" : "no"}`);
+  console.log(`source=${status.source}`);
+  console.log(`env_file=${status.envFile}`);
+  for (const note of status.notes) console.log(`note=${note}`);
+  return status.configured ? 0 : 1;
+}
+
+function cmdChannelTelegramSetup(args: string[]): number {
+  const identityId = required(args[0], "channel telegram setup requires an identity");
+  const start = hasFlag(args, "--start");
+  const workspace = optionValue(args, "--workspace") ?? homedir();
+  const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
+  const env = envFromArgs(args);
+  const envFile = optionValue(args, "--env-file") ?? claudeApiEnvPath(stateDir);
+  const authStatus = resolveClaudeCodeChannelsAuthStatus({ envFile });
+  const sessionName = `claude-code-channels-${slug(identityId)}`;
+  const startScript = join(stateDir, "start.sh");
+  const plistPath = claudeChannelsLaunchAgentPath();
+  const label = "com.local.claude-code-channels";
+  mkdirSync(stateDir, { recursive: true });
+  mkdirSync(dirname(plistPath), { recursive: true });
+  writeFileSync(
+    startScript,
+    claudeCodeChannelsStartScript({
+      identityId,
+      sessionName,
+      workspace,
+      channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
+      env,
+      envFile,
+      dangerouslySkipPermissions: hasFlag(args, "--dangerously-skip-permissions"),
+    }),
+    { mode: 0o755 },
+  );
+  chmodSync(startScript, 0o755);
+  writeFileSync(
+    plistPath,
+    claudeCodeChannelsLaunchAgentPlist({
+      label,
+      startScript,
+      stdoutPath: join(stateDir, "launchd.out.log"),
+      stderrPath: join(stateDir, "launchd.err.log"),
+    }),
+  );
+  const path = optionValue(args, "--config") ?? configPath();
+  const next = claudeCodeChannelsTelegramConfig(
+    loadConfigData(path),
+    identityId,
+    workspace,
+    stateDir,
+    env,
+    true,
+  );
+  writeConfigData(path, next);
+  console.log(`identity=${identityId}`);
+  console.log(`evi=evi-claude-code-channels-${slug(identityId)}`);
+  console.log(`start_script=${startScript}`);
+  console.log(`plist=${plistPath}`);
+  console.log(`telegram_configured=${existsSync(telegramEnvPath()) ? "yes" : "no"}`);
+  console.log(`auth_type=${authStatus.authType}`);
+  console.log(`auth_configured=${authStatus.configured ? "yes" : "no"}`);
+  console.log(`auth_source=${authStatus.source}`);
+  console.log(`auth_env_file=${authStatus.envFile}`);
+  if (start) return cmdEviStart([`evi-claude-code-channels-${slug(identityId)}`, "--config", path]);
+  return 0;
+}
+
+function cmdChannelTelegramStart(args: string[]): number {
+  const identityId = required(args[0], "channel telegram start requires an identity");
+  const path = optionValue(args, "--config") ?? configPath();
+  return cmdEviStart([`evi-claude-code-channels-${slug(identityId)}`, "--config", path]);
+}
+
+function sendClaudeCodeChannelsCommand(identityId: string, text: string): number {
+  const inventory = loadInventory();
+  const identity = inventory.identities[identityId];
+  if (!identity) {
+    const known = Object.keys(inventory.identities).sort().join(", ");
+    throw new Error(`unknown identity: ${identityId} (known: ${known})`);
+  }
+  const evi = inventory.evis[identity.activeEvi];
+  if (!evi) throw new Error(`identity has no active evi: ${identityId}`);
+  if (evi.provider !== "claude-code-channels") {
+    throw new Error(`identity ${identityId} active processor is not Claude Code Channels`);
+  }
+  if (!evi.sessionId) throw new Error(`identity ${identityId} has no Claude Code Channels session`);
+  if (!tmuxExists(evi.sessionId)) throw new Error(`tmux session is not running: ${evi.sessionId}`);
+  for (const command of tmuxSendCommands(evi.sessionId, text)) {
+    const result = run(command);
+    if (result.code !== 0) {
+      if (result.stderr.trim()) console.error(result.stderr.trim());
+      return result.code;
+    }
+  }
+  console.log(`sent=${evi.sessionId}`);
+  return 0;
+}
+
+function cmdChannelTelegramPair(args: string[]): number {
+  const identityId = required(args[0], "channel telegram pair requires an identity");
+  const code = required(args[1], "channel telegram pair requires a pairing code");
+  return sendClaudeCodeChannelsCommand(identityId, `/telegram:access pair ${code}`);
+}
+
+function cmdChannelTelegramAllowlist(args: string[]): number {
+  const identityId = required(args[0], "channel telegram allowlist requires an identity");
+  return sendClaudeCodeChannelsCommand(identityId, "/telegram:access policy allowlist");
+}
+
 function cmdInterfaceList(): number {
   const inventory = loadInventory();
   const bindings = Object.values(inventory.interfaces);
@@ -3247,6 +3705,20 @@ Setup commands:
       Register local engine setup into evictl config.
   interface bind <key> <character> [--kind <kind>] [--address <address>] [--mode <mode>] [--force]
       Connect a channel such as Telegram to a character.
+  channel telegram install
+      Install the official Claude Code Telegram channel plugin.
+  channel telegram configure --token-env <name>
+      Store a Telegram bot token for Claude Code Channels.
+  channel telegram configure-auth [--key-env ANTHROPIC_API_KEY]
+      Store an Anthropic API key from an environment variable for the launchd session.
+  channel telegram auth [--json]
+      Show whether Claude Code Channels will use Claude Code OAuth or an Anthropic API key.
+  channel telegram setup <character> [--workspace <path>] [--start]
+      Create the Claude Code Channels launch files, evictl inventory, interface, and route.
+  channel telegram pair <character> <code>
+      Pair a Telegram sender by sending the pairing code to the running Claude session.
+  channel telegram allowlist <character>
+      Restrict Telegram access to paired senders.
 
 Advanced commands:
   ps
@@ -3319,6 +3791,26 @@ export function main(argv = process.argv.slice(2)): number {
   }
   if (command === "create") return cmdCreateCharacter(args);
   if (command === "switch") return cmdSwitchCharacter(args);
+  if (command === "channel" && args[0] === "telegram" && args[1] === "install")
+    return cmdChannelTelegramInstall();
+  if (command === "channel" && args[0] === "telegram" && args[1] === "configure")
+    return cmdChannelTelegramConfigure(args.slice(2));
+  if (
+    command === "channel" &&
+    args[0] === "telegram" &&
+    (args[1] === "configure-auth" || args[1] === "configure-api")
+  )
+    return cmdChannelTelegramConfigureAuth(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "auth")
+    return cmdChannelTelegramAuth(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "setup")
+    return cmdChannelTelegramSetup(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "start")
+    return cmdChannelTelegramStart(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "pair")
+    return cmdChannelTelegramPair(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "allowlist")
+    return cmdChannelTelegramAllowlist(args.slice(2));
   if (command === "route" && args[0] === "list") return cmdRouteList();
   if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
   if (command === "target" && args[0] === "add") return cmdTargetAdd(args.slice(1));

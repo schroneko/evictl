@@ -10,8 +10,12 @@ import {
   type Route,
   appendMemoryEvent,
   bindIdentityProcessorConfig,
+  claudeApiEnvContent,
   claudeCodeChannelPluginsFromScript,
+  claudeCodeChannelsLaunchAgentPlist,
   claudeCodeChannelsLaunchPlan,
+  claudeCodeChannelsStartScript,
+  claudeCodeChannelsTelegramConfig,
   compileMemoryNotes,
   compileNetworkMemory,
   createFeedbackEvent,
@@ -28,6 +32,7 @@ import {
   queueTaskEvent,
   readMemoryEvents,
   resolveCharacterEngineEvi,
+  resolveClaudeCodeChannelsAuthStatus,
   processorSelectorFromArgs,
   resolveProcessorEvi,
   resolveEviTarget,
@@ -47,6 +52,7 @@ import {
   syncNetworkMemory,
   tmuxCaptureCommand,
   tmuxSendCommands,
+  telegramEnvContent,
 } from "../src/cli.ts";
 
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -928,6 +934,120 @@ describe("Claude Code Channels", () => {
       { plugin: "discord", marketplace: "claude-plugins-official" },
       { plugin: "telegram", marketplace: "claude-plugins-official" },
     ]);
+  });
+
+  test("builds a Telegram launch script for a durable tmux session", () => {
+    const script = claudeCodeChannelsStartScript({
+      identityId: "nukoevi",
+      sessionName: "claude-code-channels-nukoevi",
+      workspace: "/Users/example",
+      channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
+      env: { ANTHROPIC_BASE_URL: "https://api.example.test" },
+      envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      dangerouslySkipPermissions: false,
+    });
+    expect(script).toContain("session_name='claude-code-channels-nukoevi'");
+    expect(script).toContain("env_file='/Users/example/.local/share/claude-telegram-channel/claude.env'");
+    expect(script).toContain('telegram_env_file="$HOME/.claude/channels/telegram/.env"');
+    expect(script).toContain("source \"$env_file\"");
+    expect(script).toContain('source "$telegram_env_file"');
+    expect(script).toContain("export ANTHROPIC_BASE_URL='https://api.example.test'");
+    expect(script).toContain("claude_args+=('--bare')");
+    expect(script).toContain("'ANTHROPIC_API_KEY'");
+    expect(script).toContain("'TELEGRAM_BOT_TOKEN'");
+    expect(script).toContain('tmux_env_args+=(-e "$key=${(P)key}")');
+    expect(script).toContain('command="exec ${claude_args[*]}"');
+    expect(script).toContain("'--name'");
+    expect(script).toContain("'nukoevi-telegram'");
+    expect(script).toContain("plugin:telegram@claude-plugins-official");
+    expect(script).not.toContain("--dangerously-skip-permissions");
+  });
+
+  test("builds a launch agent plist for the channel start script", () => {
+    const plist = claudeCodeChannelsLaunchAgentPlist({
+      label: "com.local.claude-code-channels",
+      startScript: "/Users/example/.local/share/claude-telegram-channel/start.sh",
+      stdoutPath: "/Users/example/.local/share/claude-telegram-channel/launchd.out.log",
+      stderrPath: "/Users/example/.local/share/claude-telegram-channel/launchd.err.log",
+    });
+    expect(plist).toContain("<string>com.local.claude-code-channels</string>");
+    expect(plist).toContain("<string>/bin/zsh</string>");
+    expect(plist).toContain("start.sh</string>");
+  });
+
+  test("stores Telegram tokens as shell-safe environment content", () => {
+    expect(telegramEnvContent("abc'def")).toBe("TELEGRAM_BOT_TOKEN='abc'\\''def'\n");
+  });
+
+  test("stores Claude API keys as shell-safe environment content", () => {
+    expect(claudeApiEnvContent("sk-ant-abc'def")).toBe(
+      "ANTHROPIC_API_KEY='sk-ant-abc'\\''def'\n",
+    );
+  });
+
+  test("prefers an Anthropic API key env var for channel auth", () => {
+    const status = resolveClaudeCodeChannelsAuthStatus({
+      envFile: "/tmp/missing-claude.env",
+      env: { ANTHROPIC_API_KEY: "sk-ant-test" },
+      claudeAuthStatus: { code: 1, stdout: "", stderr: "not logged in" },
+    });
+    expect(status).toEqual({
+      authType: "anthropic-api-key",
+      configured: true,
+      source: "env:ANTHROPIC_API_KEY",
+      envFile: "/tmp/missing-claude.env",
+      notes: [],
+    });
+  });
+
+  test("detects Claude Code OAuth when no API key is configured", () => {
+    const status = resolveClaudeCodeChannelsAuthStatus({
+      envFile: "/tmp/missing-claude.env",
+      env: {},
+      claudeAuthStatus: { code: 0, stdout: "Logged in with claude.ai", stderr: "" },
+    });
+    expect(status.authType).toBe("claude-code-oauth");
+    expect(status.configured).toBe(true);
+    expect(status.source).toBe("claude auth status");
+  });
+
+  test("detects an Anthropic API key in the launch env file", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-claude-auth-test-"));
+    try {
+      const envFile = join(root, "claude.env");
+      writeFileSync(envFile, "ANTHROPIC_API_KEY='sk-ant-test'\n");
+      const status = resolveClaudeCodeChannelsAuthStatus({
+        envFile,
+        env: {},
+        claudeAuthStatus: { code: 1, stdout: "", stderr: "not logged in" },
+      });
+      expect(status.authType).toBe("anthropic-api-key");
+      expect(status.configured).toBe(true);
+      expect(status.source).toBe(envFile);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("creates evictl inventory for a Telegram-backed character", () => {
+    const data = claudeCodeChannelsTelegramConfig(
+      {},
+      "nukoevi",
+      "/Users/example",
+      "/Users/example/.local/share/claude-telegram-channel",
+      { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
+      true,
+    );
+    const inventory = loadInventory(data);
+    expect(inventory.identities.nukoevi.activeEvi).toBe("evi-claude-code-channels-nukoevi");
+    expect(inventory.evis["evi-claude-code-channels-nukoevi"].sessionId).toBe(
+      "claude-code-channels-nukoevi",
+    );
+    expect(inventory.evis["evi-claude-code-channels-nukoevi"].env.ANTHROPIC_MODEL).toBe(
+      "claude-sonnet-4-6",
+    );
+    expect(inventory.interfaces["telegram:main"].identityId).toBe("nukoevi");
+    expect(inventory.routes["telegram:claude-code-channels:nukoevi"].mode).toBe("primary");
   });
 });
 
