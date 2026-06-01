@@ -796,6 +796,7 @@ export type ClaudeCodeChannelsStartScriptOptions = {
   env: Record<string, string>;
   envFile: string;
   systemPromptFile: string;
+  model: string;
   dangerouslySkipPermissions: boolean;
 };
 
@@ -840,6 +841,7 @@ export function claudeCodeChannelsStartScript(
     "--channels",
     `plugin:${options.channel.plugin}@${options.channel.marketplace}`,
   ];
+  if (options.model) args.push("--model", options.model);
   if (allowedTools.length > 0) args.push("--allowedTools", allowedTools.join(","));
   if (options.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
   const claudeArgFragments = args.map(shellQuote);
@@ -1032,6 +1034,7 @@ export function claudeCodeChannelsTelegramConfig(
   stateDir: string,
   env: Record<string, string> = {},
   force = false,
+  model = "",
 ): Record<string, unknown> {
   const channel = { plugin: "telegram", marketplace: "claude-plugins-official" };
   const sessionName = `claude-code-channels-${slug(identityId)}`;
@@ -1057,7 +1060,7 @@ export function claudeCodeChannelsTelegramConfig(
       replicaOf: "",
       role: "replica",
       modelProvider: "",
-      model: "",
+      model,
       baseUrl: "",
       env,
     },
@@ -3514,6 +3517,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const workspace = optionValue(args, "--workspace") ?? homedir();
   const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
   const env = envFromArgs(args);
+  const model = optionValue(args, "--model") ?? "";
   const envFile = optionValue(args, "--env-file") ?? claudeApiEnvPath(stateDir);
   const authStatus = resolveClaudeCodeChannelsAuthStatus({ envFile });
   const sessionName = `claude-code-channels-${slug(identityId)}`;
@@ -3537,6 +3541,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
       env,
       envFile,
       systemPromptFile,
+      model,
       dangerouslySkipPermissions: hasFlag(args, "--dangerously-skip-permissions"),
     }),
     { mode: 0o755 },
@@ -3559,6 +3564,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
     stateDir,
     env,
     true,
+    model,
   );
   writeConfigData(path, next);
   console.log(`identity=${identityId}`);
@@ -3571,6 +3577,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
   console.log(`auth_configured=${authStatus.configured ? "yes" : "no"}`);
   console.log(`auth_source=${authStatus.source}`);
   console.log(`auth_env_file=${authStatus.envFile}`);
+  console.log(`model=${model || "-"}`);
   if (start) return startClaudeCodeChannelsIdentity(identityId, path);
   return 0;
 }
@@ -4116,7 +4123,7 @@ Setup commands:
       Store an Anthropic API key from an environment variable for the launchd session.
   channel telegram auth [--json]
       Show whether Claude Code Channels will use Claude Code OAuth or an Anthropic API key.
-  channel telegram setup <character> [--workspace <path>] [--start]
+  channel telegram setup <character> [--workspace <path>] [--model <model>] [--start]
       Create the Claude Code Channels launch files, evictl inventory, interface, and route.
   channel telegram pair <character> <code>
       Pair a Telegram sender by sending the pairing code to the running Claude session.

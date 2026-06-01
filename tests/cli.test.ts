@@ -951,6 +951,7 @@ describe("Claude Code Channels", () => {
       env: { ANTHROPIC_BASE_URL: "https://api.example.test" },
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
       systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+      model: "haiku",
       dangerouslySkipPermissions: false,
     });
     expect(script).toContain("session_name='claude-code-channels-nukoevi'");
@@ -975,6 +976,7 @@ describe("Claude Code Channels", () => {
     expect(script).toContain("mcp__plugin:telegram:telegram__download_attachment");
     expect(script).toContain("'--name'");
     expect(script).toContain("'nukoevi-telegram'");
+    expect(script).toContain("'--model' 'haiku'");
     expect(script).toContain("plugin:telegram@claude-plugins-official");
     expect(script).not.toContain("--dangerously-skip-permissions");
   });
@@ -1112,6 +1114,7 @@ describe("Claude Code Channels", () => {
       "/Users/example/.local/share/claude-telegram-channel",
       { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
       true,
+      "haiku",
     );
     const inventory = loadInventory(data);
     expect(inventory.identities.nukoevi.activeEvi).toBe("evi-claude-code-channels-nukoevi");
@@ -1121,6 +1124,7 @@ describe("Claude Code Channels", () => {
     expect(inventory.evis["evi-claude-code-channels-nukoevi"].env.ANTHROPIC_MODEL).toBe(
       "claude-sonnet-4-6",
     );
+    expect(inventory.evis["evi-claude-code-channels-nukoevi"].model).toBe("haiku");
     expect(inventory.interfaces["telegram:main"].identityId).toBe("nukoevi");
     expect(inventory.routes["telegram:claude-code-channels:nukoevi"].mode).toBe("primary");
   });
