@@ -795,6 +795,7 @@ export type ClaudeCodeChannelsStartScriptOptions = {
   channel: ClaudeCodeChannelPlugin;
   env: Record<string, string>;
   envFile: string;
+  systemPromptFile: string;
   dangerouslySkipPermissions: boolean;
 };
 
@@ -825,14 +826,23 @@ function shellQuote(value: string): string {
 export function claudeCodeChannelsStartScript(
   options: ClaudeCodeChannelsStartScriptOptions,
 ): string {
+  const allowedTools = claudeCodeChannelsAllowedTools(options.channel);
   const args = [
+    "--append-system-prompt-file",
+    options.systemPromptFile,
+    "--tools",
+    "Read",
+    "--no-chrome",
+    "--permission-mode",
+    "bypassPermissions",
     "--name",
     `${options.identityId}-${options.channel.plugin}`,
     "--channels",
     `plugin:${options.channel.plugin}@${options.channel.marketplace}`,
   ];
+  if (allowedTools.length > 0) args.push("--allowedTools", allowedTools.join(","));
   if (options.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
-  const claudeArgLines = args.map((arg) => `  ${shellQuote(arg)}`);
+  const claudeArgFragments = args.map(shellQuote);
   const tmuxEnvKeys = Array.from(
     new Set(["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", ...Object.keys(options.env).sort()]),
   );
@@ -861,16 +871,12 @@ export function claudeCodeChannelsStartScript(
     "  set +a",
     "fi",
     ...envLines,
-    "claude_args=(",
-    "  'claude'",
-    ")",
+    "claude_command='claude'",
     'if [ -n "${ANTHROPIC_API_KEY:-}" ]',
     "then",
-    "  claude_args+=('--bare')",
+    '  claude_command="${claude_command} --bare"',
     "fi",
-    "claude_args+=(",
-    ...claudeArgLines,
-    ")",
+    `claude_command="\${claude_command} ${claudeArgFragments.join(" ")}"`,
     "tmux_env_args=()",
     "tmux_env_keys=(",
     ...tmuxEnvKeyLines,
@@ -882,12 +888,38 @@ export function claudeCodeChannelsStartScript(
     '    tmux_env_args+=(-e "$key=${(P)key}")',
     "  fi",
     "done",
-    'command="exec ${claude_args[*]}"',
+    'command="exec ${claude_command}"',
     'if tmux has-session -t "$session_name" 2>/dev/null',
     "then",
     "  exit 0",
     "fi",
     'tmux new-session -d -s "$session_name" "${tmux_env_args[@]}" -c "$workdir" -- "$command"',
+    "",
+  ].join("\n");
+}
+
+export function claudeCodeChannelsAllowedTools(channel: ClaudeCodeChannelPlugin): string[] {
+  if (channel.plugin !== "telegram") return [];
+  return [
+    "mcp__plugin:telegram:telegram__reply",
+    "mcp__plugin:telegram:telegram__react",
+    "mcp__plugin:telegram:telegram__edit_message",
+    "mcp__plugin:telegram:telegram__download_attachment",
+  ];
+}
+
+export function claudeCodeChannelsSystemPrompt(channel: ClaudeCodeChannelPlugin): string {
+  if (channel.plugin !== "telegram") return "";
+  return [
+    "# Claude Code Channels Telegram runtime instructions",
+    "",
+    "Telegram messages arrive as channel events. The sender reads Telegram, not this terminal session.",
+    "For every normal Telegram message that should receive an answer, the first response action must be the mcp__plugin_telegram_telegram__reply tool call.",
+    "Do not answer a Telegram channel message by writing assistant text and ending the turn. Transcript text is not delivered to Telegram.",
+    "Pass chat_id from the inbound <channel> tag to the reply tool. Omit reply_to for a normal response to the latest message.",
+    "If the inbound tag has image_path, read that local file before answering; it is the sender's photo.",
+    "If the inbound tag has attachment_file_id, call mcp__plugin_telegram_telegram__download_attachment with that file_id, read the returned path, then answer with the reply tool.",
+    "Use mcp__plugin_telegram_telegram__react for lightweight acknowledgements and mcp__plugin_telegram_telegram__edit_message only for bot messages already sent.",
     "",
   ].join("\n");
 }
@@ -3388,6 +3420,45 @@ function claudeApiEnvPath(stateDir = claudeChannelsStateDir()): string {
   return join(stateDir, "claude.env");
 }
 
+function claudeChannelsSystemPromptPath(stateDir = claudeChannelsStateDir()): string {
+  return join(stateDir, "channels-system-prompt.md");
+}
+
+export function competingHermesEvisForClaudeCodeChannels(
+  inventory: Inventory,
+  identityId: string,
+): Evi[] {
+  const identity = inventory.identities[identityId];
+  if (!identity) return [];
+  return Object.values(inventory.evis)
+    .filter((evi) => evi.provider === "hermes-agent" && characterEngineScore(evi, identity) > 0)
+    .sort((a, b) => a.eviId.localeCompare(b.eviId));
+}
+
+function stopCompetingHermesForClaudeCodeChannels(
+  inventory: Inventory,
+  identityId: string,
+): TargetStatus[] {
+  const statuses: TargetStatus[] = [];
+  const stoppedRuntimes = new Set<string>();
+  for (const evi of competingHermesEvisForClaudeCodeChannels(inventory, identityId)) {
+    if (stoppedRuntimes.has(evi.runtime)) continue;
+    const target = inventory.targets[evi.runtime];
+    if (!target) continue;
+    stopTarget(target);
+    stoppedRuntimes.add(evi.runtime);
+    statuses.push(statusFor(target));
+  }
+  return statuses;
+}
+
+function startClaudeCodeChannelsIdentity(identityId: string, path: string): number {
+  const inventory = loadInventory(loadConfigData(path));
+  const stopped = stopCompetingHermesForClaudeCodeChannels(inventory, identityId);
+  if (stopped.length > 0) printStatuses(stopped);
+  return cmdEviStart([`evi-claude-code-channels-${slug(identityId)}`, "--config", path]);
+}
+
 function cmdChannelTelegramInstall(): number {
   const result = run(["claude", "plugin", "install", "telegram@claude-plugins-official"]);
   if (result.stdout.trim()) console.log(result.stdout.trim());
@@ -3445,10 +3516,15 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const authStatus = resolveClaudeCodeChannelsAuthStatus({ envFile });
   const sessionName = `claude-code-channels-${slug(identityId)}`;
   const startScript = join(stateDir, "start.sh");
+  const systemPromptFile = claudeChannelsSystemPromptPath(stateDir);
   const plistPath = claudeChannelsLaunchAgentPath();
   const label = "com.local.claude-code-channels";
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(dirname(plistPath), { recursive: true });
+  writeFileSync(
+    systemPromptFile,
+    claudeCodeChannelsSystemPrompt({ plugin: "telegram", marketplace: "claude-plugins-official" }),
+  );
   writeFileSync(
     startScript,
     claudeCodeChannelsStartScript({
@@ -3458,6 +3534,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
       channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
       env,
       envFile,
+      systemPromptFile,
       dangerouslySkipPermissions: hasFlag(args, "--dangerously-skip-permissions"),
     }),
     { mode: 0o755 },
@@ -3485,20 +3562,21 @@ function cmdChannelTelegramSetup(args: string[]): number {
   console.log(`identity=${identityId}`);
   console.log(`evi=evi-claude-code-channels-${slug(identityId)}`);
   console.log(`start_script=${startScript}`);
+  console.log(`system_prompt=${systemPromptFile}`);
   console.log(`plist=${plistPath}`);
   console.log(`telegram_configured=${existsSync(telegramEnvPath()) ? "yes" : "no"}`);
   console.log(`auth_type=${authStatus.authType}`);
   console.log(`auth_configured=${authStatus.configured ? "yes" : "no"}`);
   console.log(`auth_source=${authStatus.source}`);
   console.log(`auth_env_file=${authStatus.envFile}`);
-  if (start) return cmdEviStart([`evi-claude-code-channels-${slug(identityId)}`, "--config", path]);
+  if (start) return startClaudeCodeChannelsIdentity(identityId, path);
   return 0;
 }
 
 function cmdChannelTelegramStart(args: string[]): number {
   const identityId = required(args[0], "channel telegram start requires an identity");
   const path = optionValue(args, "--config") ?? configPath();
-  return cmdEviStart([`evi-claude-code-channels-${slug(identityId)}`, "--config", path]);
+  return startClaudeCodeChannelsIdentity(identityId, path);
 }
 
 function sendClaudeCodeChannelsCommand(identityId: string, text: string): number {

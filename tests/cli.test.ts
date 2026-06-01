@@ -14,12 +14,15 @@ import {
   buildMigrationReport,
   claudeApiEnvContent,
   claudeCodeChannelPluginsFromScript,
+  claudeCodeChannelsAllowedTools,
   claudeCodeChannelsLaunchAgentPlist,
   claudeCodeChannelsLaunchPlan,
   claudeCodeChannelsStartScript,
+  claudeCodeChannelsSystemPrompt,
   claudeCodeChannelsTelegramConfig,
   compileMemoryNotes,
   compileNetworkMemory,
+  competingHermesEvisForClaudeCodeChannels,
   createFeedbackEvent,
   createTaskEvent,
   discoverFromPlistRecords,
@@ -947,6 +950,7 @@ describe("Claude Code Channels", () => {
       channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
       env: { ANTHROPIC_BASE_URL: "https://api.example.test" },
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       dangerouslySkipPermissions: false,
     });
     expect(script).toContain("session_name='claude-code-channels-nukoevi'");
@@ -955,15 +959,80 @@ describe("Claude Code Channels", () => {
     expect(script).toContain("source \"$env_file\"");
     expect(script).toContain('source "$telegram_env_file"');
     expect(script).toContain("export ANTHROPIC_BASE_URL='https://api.example.test'");
-    expect(script).toContain("claude_args+=('--bare')");
+    expect(script).toContain('claude_command="${claude_command} --bare"');
     expect(script).toContain("'ANTHROPIC_API_KEY'");
     expect(script).toContain("'TELEGRAM_BOT_TOKEN'");
     expect(script).toContain('tmux_env_args+=(-e "$key=${(P)key}")');
-    expect(script).toContain('command="exec ${claude_args[*]}"');
+    expect(script).toContain('command="exec ${claude_command}"');
+    expect(script).toContain("--append-system-prompt-file");
+    expect(script).toContain("/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md");
+    expect(script).toContain("'--tools' 'Read'");
+    expect(script).toContain("--permission-mode");
+    expect(script).toContain("bypassPermissions");
+    expect(script).toContain("--allowedTools");
+    expect(script).toContain("mcp__plugin:telegram:telegram__reply");
+    expect(script).toContain("mcp__plugin:telegram:telegram__download_attachment");
     expect(script).toContain("'--name'");
     expect(script).toContain("'nukoevi-telegram'");
     expect(script).toContain("plugin:telegram@claude-plugins-official");
     expect(script).not.toContain("--dangerously-skip-permissions");
+  });
+
+  test("builds Telegram channel runtime prompt with reply and image handling", () => {
+    const prompt = claudeCodeChannelsSystemPrompt({
+      plugin: "telegram",
+      marketplace: "claude-plugins-official",
+    });
+    expect(prompt).toContain("mcp__plugin_telegram_telegram__reply");
+    expect(prompt).toContain("chat_id");
+    expect(prompt).toContain("Transcript text is not delivered to Telegram");
+    expect(prompt).toContain("image_path");
+    expect(prompt).toContain("attachment_file_id");
+    expect(prompt).toContain("mcp__plugin_telegram_telegram__download_attachment");
+  });
+
+  test("allows Telegram reply tools including attachment download", () => {
+    expect(
+      claudeCodeChannelsAllowedTools({
+        plugin: "telegram",
+        marketplace: "claude-plugins-official",
+      }),
+    ).toEqual([
+      "mcp__plugin:telegram:telegram__reply",
+      "mcp__plugin:telegram:telegram__react",
+      "mcp__plugin:telegram:telegram__edit_message",
+      "mcp__plugin:telegram:telegram__download_attachment",
+    ]);
+  });
+
+  test("selects same-character Hermes evis as Telegram poller competitors", () => {
+    const inventory = loadInventory({
+      evis: {
+        "evi-hermes-agent-demo": {
+          runtime: "hermes-agent",
+          provider: "hermes-agent",
+          profile: "demo",
+        },
+        "evi-hermes-agent-other": {
+          runtime: "hermes-agent",
+          provider: "hermes-agent",
+          profile: "other",
+        },
+        "evi-claude-code-channels-demo": {
+          runtime: "claude-code-channels",
+          provider: "claude-code-channels",
+          profile: "demo",
+        },
+      },
+      identities: {
+        demo: {
+          active_evi: "evi-claude-code-channels-demo",
+        },
+      },
+    });
+    expect(competingHermesEvisForClaudeCodeChannels(inventory, "demo").map((evi) => evi.eviId)).toEqual([
+      "evi-hermes-agent-demo",
+    ]);
   });
 
   test("builds a launch agent plist for the channel start script", () => {
