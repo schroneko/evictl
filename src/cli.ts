@@ -831,7 +831,7 @@ export function claudeCodeChannelsStartScript(
     "--append-system-prompt-file",
     options.systemPromptFile,
     "--tools",
-    "Read",
+    "default",
     "--no-chrome",
     "--permission-mode",
     "bypassPermissions",
@@ -901,6 +901,7 @@ export function claudeCodeChannelsStartScript(
 export function claudeCodeChannelsAllowedTools(channel: ClaudeCodeChannelPlugin): string[] {
   if (channel.plugin !== "telegram") return [];
   return [
+    "Read",
     "mcp__plugin:telegram:telegram__reply",
     "mcp__plugin:telegram:telegram__react",
     "mcp__plugin:telegram:telegram__edit_message",
@@ -919,6 +920,7 @@ export function claudeCodeChannelsSystemPrompt(channel: ClaudeCodeChannelPlugin)
     "Pass chat_id from the inbound <channel> tag to the reply tool. Omit reply_to for a normal response to the latest message.",
     "If the inbound tag has image_path, read that local file before answering; it is the sender's photo.",
     "If the inbound tag has attachment_file_id, call mcp__plugin_telegram_telegram__download_attachment with that file_id, read the returned path, then answer with the reply tool.",
+    "The reply tool can send files by absolute path; use it when the sender asks for an image or document response.",
     "Use mcp__plugin_telegram_telegram__react for lightweight acknowledgements and mcp__plugin_telegram_telegram__edit_message only for bot messages already sent.",
     "",
   ].join("\n");

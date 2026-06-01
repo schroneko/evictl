@@ -966,10 +966,11 @@ describe("Claude Code Channels", () => {
     expect(script).toContain('command="exec ${claude_command}"');
     expect(script).toContain("--append-system-prompt-file");
     expect(script).toContain("/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md");
-    expect(script).toContain("'--tools' 'Read'");
+    expect(script).toContain("'--tools' 'default'");
     expect(script).toContain("--permission-mode");
     expect(script).toContain("bypassPermissions");
     expect(script).toContain("--allowedTools");
+    expect(script).toContain("Read");
     expect(script).toContain("mcp__plugin:telegram:telegram__reply");
     expect(script).toContain("mcp__plugin:telegram:telegram__download_attachment");
     expect(script).toContain("'--name'");
@@ -989,6 +990,7 @@ describe("Claude Code Channels", () => {
     expect(prompt).toContain("image_path");
     expect(prompt).toContain("attachment_file_id");
     expect(prompt).toContain("mcp__plugin_telegram_telegram__download_attachment");
+    expect(prompt).toContain("files by absolute path");
   });
 
   test("allows Telegram reply tools including attachment download", () => {
@@ -998,6 +1000,7 @@ describe("Claude Code Channels", () => {
         marketplace: "claude-plugins-official",
       }),
     ).toEqual([
+      "Read",
       "mcp__plugin:telegram:telegram__reply",
       "mcp__plugin:telegram:telegram__react",
       "mcp__plugin:telegram:telegram__edit_message",
