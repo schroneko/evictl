@@ -18,6 +18,7 @@ import {
   claudeCodeChannelsLaunchAgentPlist,
   claudeCodeChannelsLaunchPlan,
   claudeCodeChannelsStartScript,
+  claudeCodeChannelsStartScriptWithModel,
   claudeCodeChannelsSystemPrompt,
   claudeCodeChannelsTelegramConfig,
   compileMemoryNotes,
@@ -993,6 +994,23 @@ describe("Claude Code Channels", () => {
     expect(prompt).toContain("attachment_file_id");
     expect(prompt).toContain("mcp__plugin_telegram_telegram__download_attachment");
     expect(prompt).toContain("files by absolute path");
+  });
+
+  test("updates an existing Telegram launch script model without dropping channels", () => {
+    const script =
+      "claude --tools default --allowedTools Read,mcp__plugin:telegram:telegram__reply --model haiku --channels plugin:telegram@claude-plugins-official --channels plugin:fakechat@claude-plugins-official";
+    const next = claudeCodeChannelsStartScriptWithModel(script, "claude-opus-4-8");
+    expect(next).toContain("--model 'claude-opus-4-8'");
+    expect(next).toContain("--channels plugin:telegram@claude-plugins-official");
+    expect(next).toContain("--channels plugin:fakechat@claude-plugins-official");
+    expect(next).toContain("--allowedTools Read,mcp__plugin:telegram:telegram__reply");
+  });
+
+  test("adds a model to an existing Telegram launch script without dropping channels", () => {
+    const script =
+      "claude --tools default --allowedTools Read,mcp__plugin:telegram:telegram__reply --channels plugin:telegram@claude-plugins-official";
+    const next = claudeCodeChannelsStartScriptWithModel(script, "claude-opus-4-8");
+    expect(next).toContain("--model 'claude-opus-4-8' --channels");
   });
 
   test("allows Telegram reply tools including attachment download", () => {

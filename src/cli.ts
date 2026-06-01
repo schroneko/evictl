@@ -275,6 +275,7 @@ const VALUE_OPTIONS = new Set([
   "--replica-of",
   "--role",
   "--runtime",
+  "--restart",
   "--session",
   "--session-id",
   "--model",
@@ -926,6 +927,17 @@ export function claudeCodeChannelsSystemPrompt(channel: ClaudeCodeChannelPlugin)
     "Use mcp__plugin_telegram_telegram__react for lightweight acknowledgements and mcp__plugin_telegram_telegram__edit_message only for bot messages already sent.",
     "",
   ].join("\n");
+}
+
+export function claudeCodeChannelsStartScriptWithModel(script: string, model: string): string {
+  const modelArg = shellQuote(model);
+  if (/\s--model\s+('[^']*'|"[^"]*"|[^\s"]+)/.test(script)) {
+    return script.replace(/\s--model\s+('[^']*'|"[^"]*"|[^\s"]+)/, ` --model ${modelArg}`);
+  }
+  if (script.includes(" --channels ")) {
+    return script.replace(" --channels ", ` --model ${modelArg} --channels `);
+  }
+  throw new Error("Claude Code Channels start script does not contain --channels");
 }
 
 function plistEscape(value: string): string {
@@ -3464,6 +3476,26 @@ function startClaudeCodeChannelsIdentity(identityId: string, path: string): numb
   return cmdEviStart([`evi-claude-code-channels-${slug(identityId)}`, "--config", path]);
 }
 
+function setClaudeCodeChannelsModelConfig(
+  data: Record<string, unknown>,
+  eviId: string,
+  model: string,
+): Record<string, unknown> {
+  const evis = objectValue(data.evis);
+  const evi = objectValue(evis[eviId]);
+  if (Object.keys(evi).length === 0) throw new Error(`unknown evi: ${eviId}`);
+  return {
+    ...data,
+    evis: {
+      ...evis,
+      [eviId]: {
+        ...evi,
+        model,
+      },
+    },
+  };
+}
+
 function cmdChannelTelegramInstall(): number {
   const result = run(["claude", "plugin", "install", "telegram@claude-plugins-official"]);
   if (result.stdout.trim()) console.log(result.stdout.trim());
@@ -3586,6 +3618,32 @@ function cmdChannelTelegramStart(args: string[]): number {
   const identityId = required(args[0], "channel telegram start requires an identity");
   const path = optionValue(args, "--config") ?? configPath();
   return startClaudeCodeChannelsIdentity(identityId, path);
+}
+
+function cmdChannelTelegramModel(args: string[]): number {
+  const identityId = required(args[0], "channel telegram model requires an identity");
+  const model = required(args[1], "channel telegram model requires a model");
+  const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const inventory = loadInventory(data);
+  const eviId = `evi-claude-code-channels-${slug(identityId)}`;
+  const evi = inventory.evis[eviId];
+  if (!evi) throw new Error(`unknown Claude Code Channels evi: ${eviId}`);
+  const startScript = join(evi.stateDir, "start.sh");
+  if (!existsSync(startScript)) throw new Error(`start script not found: ${startScript}`);
+  const nextScript = claudeCodeChannelsStartScriptWithModel(readFileSync(startScript, "utf8"), model);
+  writeFileSync(startScript, nextScript, { mode: 0o755 });
+  chmodSync(startScript, 0o755);
+  writeConfigData(path, setClaudeCodeChannelsModelConfig(data, eviId, model));
+  console.log(`identity=${identityId}`);
+  console.log(`evi=${eviId}`);
+  console.log(`model=${model}`);
+  console.log(`start_script=${startScript}`);
+  if (hasFlag(args, "--restart")) {
+    cmdEviStop([eviId, "--config", path]);
+    return startClaudeCodeChannelsIdentity(identityId, path);
+  }
+  return 0;
 }
 
 function sendClaudeCodeChannelsCommand(identityId: string, text: string): number {
@@ -4125,6 +4183,8 @@ Setup commands:
       Show whether Claude Code Channels will use Claude Code OAuth or an Anthropic API key.
   channel telegram setup <character> [--workspace <path>] [--model <model>] [--start]
       Create the Claude Code Channels launch files, evictl inventory, interface, and route.
+  channel telegram model <character> <model> [--restart]
+      Update an existing Claude Code Channels launch script model without dropping channel flags.
   channel telegram pair <character> <code>
       Pair a Telegram sender by sending the pairing code to the running Claude session.
   channel telegram allowlist <character>
@@ -4218,6 +4278,8 @@ export function main(argv = process.argv.slice(2)): number {
     return cmdChannelTelegramSetup(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "start")
     return cmdChannelTelegramStart(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "model")
+    return cmdChannelTelegramModel(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "pair")
     return cmdChannelTelegramPair(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "allowlist")
