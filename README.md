@@ -424,7 +424,7 @@ Example:
       "label": "com.local.claude-code-channels",
       "plist": "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
       "tmux_sessions": ["claude-code-channels"],
-      "process_patterns": ["claude.*plugin:(telegram|discord|fakechat)", "demo-(telegram|discord)", "claude-code-channels"],
+      "process_patterns": ["claude.*plugin:(telegram|discord)", "demo-(telegram|discord)", "claude-code-channels"],
       "health_patterns": ["Listening for channel messages from:"]
     }
   },

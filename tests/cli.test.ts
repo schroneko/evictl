@@ -101,7 +101,7 @@ describe("defaults", () => {
 
   test("Claude Code Channels has a durable channel process health marker", () => {
     expect(DEFAULT_TARGETS["claude-code-channels"].healthProcessPatterns).toContain(
-      "claude-plugins-official/(telegram|discord|fakechat)",
+      "claude-plugins-official/(telegram|discord)",
     );
   });
 
@@ -998,11 +998,11 @@ describe("Claude Code Channels", () => {
 
   test("updates an existing Telegram launch script model without dropping channels", () => {
     const script =
-      "claude --tools default --allowedTools Read,mcp__plugin:telegram:telegram__reply --model haiku --channels plugin:telegram@claude-plugins-official --channels plugin:fakechat@claude-plugins-official";
+      "claude --tools default --allowedTools Read,mcp__plugin:telegram:telegram__reply --model haiku --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official";
     const next = claudeCodeChannelsStartScriptWithModel(script, "claude-opus-4-8");
     expect(next).toContain("--model 'claude-opus-4-8'");
     expect(next).toContain("--channels plugin:telegram@claude-plugins-official");
-    expect(next).toContain("--channels plugin:fakechat@claude-plugins-official");
+    expect(next).toContain("--channels plugin:discord@claude-plugins-official");
     expect(next).toContain("--allowedTools Read,mcp__plugin:telegram:telegram__reply");
   });
 

@@ -320,11 +320,11 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
     plist: "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
     tmuxSessions: ["claude-code-channels"],
     processPatterns: [
-      "claude.*plugin:(telegram|discord|fakechat)",
+      "claude.*plugin:(telegram|discord)",
       "claude-code-channels",
     ],
     healthPatterns: ["Listening for channel messages from:"],
-    healthProcessPatterns: ["claude-plugins-official/(telegram|discord|fakechat)"],
+    healthProcessPatterns: ["claude-plugins-official/(telegram|discord)"],
   },
 };
 
@@ -736,7 +736,6 @@ export function claudeCodeChannelPluginsFromScript(script: string): ClaudeCodeCh
 
 const CLAUDE_CODE_CHANNEL_MARKETPLACES: Record<string, string> = {
   discord: "claude-plugins-official",
-  fakechat: "claude-plugins-official",
   imessage: "claude-plugins-official",
   telegram: "claude-plugins-official",
 };
