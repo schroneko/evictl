@@ -737,6 +737,7 @@ export function claudeCodeChannelPluginsFromScript(script: string): ClaudeCodeCh
 const CLAUDE_CODE_CHANNEL_MARKETPLACES: Record<string, string> = {
   discord: "claude-plugins-official",
   imessage: "claude-plugins-official",
+  stackchan: "claude-plugins-official",
   telegram: "claude-plugins-official",
 };
 
@@ -793,6 +794,7 @@ export type ClaudeCodeChannelsStartScriptOptions = {
   sessionName: string;
   workspace: string;
   channel: ClaudeCodeChannelPlugin;
+  channels?: ClaudeCodeChannelPlugin[];
   env: Record<string, string>;
   envFile: string;
   systemPromptFile: string;
@@ -827,7 +829,8 @@ function shellQuote(value: string): string {
 export function claudeCodeChannelsStartScript(
   options: ClaudeCodeChannelsStartScriptOptions,
 ): string {
-  const allowedTools = claudeCodeChannelsAllowedTools(options.channel);
+  const channels = options.channels?.length ? options.channels : [options.channel];
+  const allowedTools = claudeCodeChannelsAllowedToolsForChannels(channels);
   const args = [
     "--append-system-prompt-file",
     options.systemPromptFile,
@@ -837,10 +840,11 @@ export function claudeCodeChannelsStartScript(
     "--permission-mode",
     "bypassPermissions",
     "--name",
-    `${options.identityId}-${options.channel.plugin}`,
-    "--channels",
-    `plugin:${options.channel.plugin}@${options.channel.marketplace}`,
+    `${options.identityId}-${channels[0].plugin}`,
   ];
+  for (const channel of channels) {
+    args.push("--channels", `plugin:${channel.plugin}@${channel.marketplace}`);
+  }
   if (options.model) args.push("--model", options.model);
   if (allowedTools.length > 0) args.push("--allowedTools", allowedTools.join(","));
   if (options.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
@@ -901,6 +905,7 @@ export function claudeCodeChannelsStartScript(
 }
 
 export function claudeCodeChannelsAllowedTools(channel: ClaudeCodeChannelPlugin): string[] {
+  if (channel.plugin === "stackchan") return ["mcp__stackchan__reply"];
   if (channel.plugin !== "telegram") return [];
   return [
     "Read",
@@ -908,6 +913,16 @@ export function claudeCodeChannelsAllowedTools(channel: ClaudeCodeChannelPlugin)
     "mcp__plugin:telegram:telegram__react",
     "mcp__plugin:telegram:telegram__edit_message",
     "mcp__plugin:telegram:telegram__download_attachment",
+  ];
+}
+
+export function claudeCodeChannelsAllowedToolsForChannels(
+  channels: ClaudeCodeChannelPlugin[],
+): string[] {
+  return [
+    ...new Set(
+      channels.flatMap((channel) => claudeCodeChannelsAllowedTools(channel)),
+    ),
   ];
 }
 
@@ -926,6 +941,45 @@ export function claudeCodeChannelsSystemPrompt(channel: ClaudeCodeChannelPlugin)
     "Use mcp__plugin_telegram_telegram__react for lightweight acknowledgements and mcp__plugin_telegram_telegram__edit_message only for bot messages already sent.",
     "",
   ].join("\n");
+}
+
+export function claudeCodeChannelsSystemPromptForChannels(
+  channels: ClaudeCodeChannelPlugin[],
+  options: { nukoeviRouting?: boolean } = {},
+): string {
+  const parts = channels
+    .map((channel) => claudeCodeChannelsSystemPrompt(channel))
+    .filter((part) => part.trim().length > 0);
+  if (channels.some((channel) => channel.plugin === "stackchan")) {
+    parts.push(
+      [
+        "# Claude Code Channels StackChan runtime instructions",
+        "",
+        "StackChan messages arrive as channel events from the device UI or voice input.",
+        "For normal StackChan messages that should receive an answer, reply with the mcp__stackchan__reply tool.",
+        "Keep StackChan replies short because they are shown on the device screen and may be spoken by TTS.",
+        "",
+      ].join("\n"),
+    );
+  }
+  if (
+    options.nukoeviRouting &&
+    channels.some((channel) => channel.plugin === "telegram") &&
+    channels.some((channel) => channel.plugin === "stackchan")
+  ) {
+    parts.push(
+      [
+        "# Nukoevi final channel routing rule",
+        "",
+        "For normal Telegram input, create the answer text once and first send it with plugin:telegram:telegram reply.",
+        "After the Telegram reply tool succeeds, send the exact same text to mcp__stackchan__reply.",
+        "Do not end a Telegram turn with assistant transcript text only or StackChan reply only.",
+        "For normal StackChan input, do not mirror the message to Telegram. Reply only with mcp__stackchan__reply.",
+        "",
+      ].join("\n"),
+    );
+  }
+  return parts.join("\n");
 }
 
 export function claudeCodeChannelsStartScriptWithModel(script: string, model: string): string {
@@ -1046,13 +1100,16 @@ export function claudeCodeChannelsTelegramConfig(
   env: Record<string, string> = {},
   force = false,
   model = "",
+  channels: ClaudeCodeChannelPlugin[] = [{ plugin: "telegram", marketplace: "claude-plugins-official" }],
+  targetOptions: { label?: string; plist?: string } = {},
 ): Record<string, unknown> {
-  const channel = { plugin: "telegram", marketplace: "claude-plugins-official" };
+  const primaryChannel = channels[0] ?? { plugin: "telegram", marketplace: "claude-plugins-official" };
   const sessionName = `claude-code-channels-${slug(identityId)}`;
   const eviId = `evi-claude-code-channels-${slug(identityId)}`;
   const target: Target = {
     ...DEFAULT_TARGETS["claude-code-channels"],
-    plist: join(homedir(), "Library", "LaunchAgents", "com.local.claude-code-channels.plist"),
+    label: targetOptions.label ?? DEFAULT_TARGETS["claude-code-channels"].label,
+    plist: targetOptions.plist ?? join(homedir(), "Library", "LaunchAgents", "com.local.claude-code-channels.plist"),
     tmuxSessions: [sessionName],
   };
   let next = setTargetConfig(data, target, force);
@@ -1063,7 +1120,7 @@ export function claudeCodeChannelsTelegramConfig(
       runtime: "claude-code-channels",
       provider: "claude-code-channels",
       profile: identityId,
-      agentId: `${identityId}-${channel.plugin}`,
+      agentId: `${identityId}-${primaryChannel.plugin}`,
       sessionId: sessionName,
       workspace,
       stateDir,
@@ -1088,29 +1145,32 @@ export function claudeCodeChannelsTelegramConfig(
     },
     force,
   );
-  next = setInterfaceConfig(
-    next,
-    {
-      key: "telegram:main",
-      kind: "telegram",
-      address: "main",
-      identityId,
-      mode: "primary",
-    },
-    force,
-  );
-  return setRouteConfig(
-    next,
-    {
-      key: `telegram:claude-code-channels:${slug(identityId)}`,
-      channel: "telegram",
-      accountId: "default",
-      peerId: "",
-      targetEvi: eviId,
-      mode: "primary",
-    },
-    force,
-  );
+  for (const channel of channels) {
+    next = setInterfaceConfig(
+      next,
+      {
+        key: `${channel.plugin}:main`,
+        kind: channel.plugin,
+        address: "main",
+        identityId,
+        mode: "primary",
+      },
+      force,
+    );
+    next = setRouteConfig(
+      next,
+      {
+        key: `${channel.plugin}:claude-code-channels:${slug(identityId)}`,
+        channel: channel.plugin,
+        accountId: "default",
+        peerId: "",
+        targetEvi: eviId,
+        mode: "primary",
+      },
+      force,
+    );
+  }
+  return next;
 }
 
 function profileFromClaudeCodeChannels(agentName: string, plugins: ClaudeCodeChannelPlugin[]): string {
@@ -3440,6 +3500,18 @@ function claudeChannelsSystemPromptPath(stateDir = claudeChannelsStateDir()): st
   return join(stateDir, "channels-system-prompt.md");
 }
 
+function claudeCodeChannelsFromArgs(args: string[]): ClaudeCodeChannelPlugin[] {
+  const names = optionValues(args, "--channel");
+  const selected = names.length > 0 ? names : ["telegram"];
+  const channels = new Map<string, ClaudeCodeChannelPlugin>();
+  for (const name of selected) {
+    const marketplace = CLAUDE_CODE_CHANNEL_MARKETPLACES[name];
+    if (!marketplace) throw new Error(`unsupported Claude Code channel: ${name}`);
+    channels.set(`${name}@${marketplace}`, { plugin: name, marketplace });
+  }
+  return [...channels.values()];
+}
+
 export function competingHermesEvisForClaudeCodeChannels(
   inventory: Inventory,
   identityId: string,
@@ -3545,6 +3617,8 @@ function cmdChannelTelegramAuth(args: string[]): number {
 function cmdChannelTelegramSetup(args: string[]): number {
   const identityId = required(args[0], "channel telegram setup requires an identity");
   const start = hasFlag(args, "--start");
+  const dryRun = hasFlag(args, "--dry-run");
+  const json = hasFlag(args, "--json");
   const workspace = optionValue(args, "--workspace") ?? homedir();
   const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
   const env = envFromArgs(args);
@@ -3554,39 +3628,30 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const sessionName = `claude-code-channels-${slug(identityId)}`;
   const startScript = join(stateDir, "start.sh");
   const systemPromptFile = claudeChannelsSystemPromptPath(stateDir);
-  const plistPath = claudeChannelsLaunchAgentPath();
-  const label = "com.local.claude-code-channels";
-  mkdirSync(stateDir, { recursive: true });
-  mkdirSync(dirname(plistPath), { recursive: true });
-  writeFileSync(
+  const plistPath = optionValue(args, "--plist-path") ?? claudeChannelsLaunchAgentPath();
+  const label = optionValue(args, "--label") ?? "com.local.claude-code-channels";
+  const channels = claudeCodeChannelsFromArgs(args);
+  const systemPrompt = claudeCodeChannelsSystemPromptForChannels(channels, {
+    nukoeviRouting: hasFlag(args, "--nukoevi-routing"),
+  });
+  const startScriptContent = claudeCodeChannelsStartScript({
+    identityId,
+    sessionName,
+    workspace,
+    channel: channels[0],
+    channels,
+    env,
+    envFile,
     systemPromptFile,
-    claudeCodeChannelsSystemPrompt({ plugin: "telegram", marketplace: "claude-plugins-official" }),
-  );
-  writeFileSync(
+    model,
+    dangerouslySkipPermissions: hasFlag(args, "--dangerously-skip-permissions"),
+  });
+  const plistContent = claudeCodeChannelsLaunchAgentPlist({
+    label,
     startScript,
-    claudeCodeChannelsStartScript({
-      identityId,
-      sessionName,
-      workspace,
-      channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
-      env,
-      envFile,
-      systemPromptFile,
-      model,
-      dangerouslySkipPermissions: hasFlag(args, "--dangerously-skip-permissions"),
-    }),
-    { mode: 0o755 },
-  );
-  chmodSync(startScript, 0o755);
-  writeFileSync(
-    plistPath,
-    claudeCodeChannelsLaunchAgentPlist({
-      label,
-      startScript,
-      stdoutPath: join(stateDir, "launchd.out.log"),
-      stderrPath: join(stateDir, "launchd.err.log"),
-    }),
-  );
+    stdoutPath: join(stateDir, "launchd.out.log"),
+    stderrPath: join(stateDir, "launchd.err.log"),
+  });
   const path = optionValue(args, "--config") ?? configPath();
   const next = claudeCodeChannelsTelegramConfig(
     loadConfigData(path),
@@ -3596,10 +3661,45 @@ function cmdChannelTelegramSetup(args: string[]): number {
     env,
     true,
     model,
+    channels,
+    { label, plist: plistPath },
   );
-  writeConfigData(path, next);
+  if (dryRun) {
+    if (json) {
+      console.log(
+        JSON.stringify(
+          {
+            identity: identityId,
+            evi: `evi-claude-code-channels-${slug(identityId)}`,
+            channels: channels.map((channel) => channel.plugin),
+            startScript,
+            systemPromptFile,
+            plistPath,
+            configPath: path,
+            startScriptContent,
+            systemPrompt,
+            plistContent,
+            config: next,
+          },
+          null,
+          2,
+        ),
+      );
+      return 0;
+    }
+    console.log("dry_run=yes");
+  } else {
+    mkdirSync(stateDir, { recursive: true });
+    mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(systemPromptFile, systemPrompt);
+    writeFileSync(startScript, startScriptContent, { mode: 0o755 });
+    chmodSync(startScript, 0o755);
+    writeFileSync(plistPath, plistContent);
+    writeConfigData(path, next);
+  }
   console.log(`identity=${identityId}`);
   console.log(`evi=evi-claude-code-channels-${slug(identityId)}`);
+  console.log(`channels=${channels.map((channel) => channel.plugin).join(",")}`);
   console.log(`start_script=${startScript}`);
   console.log(`system_prompt=${systemPromptFile}`);
   console.log(`plist=${plistPath}`);
@@ -3609,6 +3709,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
   console.log(`auth_source=${authStatus.source}`);
   console.log(`auth_env_file=${authStatus.envFile}`);
   console.log(`model=${model || "-"}`);
+  if (dryRun) return 0;
   if (start) return startClaudeCodeChannelsIdentity(identityId, path);
   return 0;
 }
@@ -4180,8 +4281,8 @@ Setup commands:
       Store an Anthropic API key from an environment variable for the launchd session.
   channel telegram auth [--json]
       Show whether Claude Code Channels will use Claude Code OAuth or an Anthropic API key.
-  channel telegram setup <character> [--workspace <path>] [--model <model>] [--start]
-      Create the Claude Code Channels launch files, evictl inventory, interface, and route.
+  channel telegram setup <character> [--workspace <path>] [--model <model>] [--channel telegram] [--channel stackchan] [--nukoevi-routing] [--dry-run] [--start]
+      Create the Claude Code Channels launch files, evictl inventory, interfaces, and routes.
   channel telegram model <character> <model> [--restart]
       Update an existing Claude Code Channels launch script model without dropping channel flags.
   channel telegram pair <character> <code>

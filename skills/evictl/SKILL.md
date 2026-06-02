@@ -26,6 +26,18 @@ bun run check
 bun run build
 ```
 
+If the `evictl` command is missing while working from the local checkout, install
+that checkout before runtime inspection:
+
+```bash
+bun install -g /Users/username/ghq/github.com/schroneko/evictl
+evictl --help
+```
+
+If Bun warns that its global bin directory is not on `PATH`, add `~/.bun/bin`
+to `PATH` or expose the installed binary from an existing bin directory such as
+`~/.local/bin`.
+
 Packaging checks:
 
 ```bash

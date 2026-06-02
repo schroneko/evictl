@@ -15,11 +15,13 @@ import {
   claudeApiEnvContent,
   claudeCodeChannelPluginsFromScript,
   claudeCodeChannelsAllowedTools,
+  claudeCodeChannelsAllowedToolsForChannels,
   claudeCodeChannelsLaunchAgentPlist,
   claudeCodeChannelsLaunchPlan,
   claudeCodeChannelsStartScript,
   claudeCodeChannelsStartScriptWithModel,
   claudeCodeChannelsSystemPrompt,
+  claudeCodeChannelsSystemPromptForChannels,
   claudeCodeChannelsTelegramConfig,
   compileMemoryNotes,
   compileNetworkMemory,
@@ -982,6 +984,29 @@ describe("Claude Code Channels", () => {
     expect(script).not.toContain("--dangerously-skip-permissions");
   });
 
+  test("builds a Telegram and StackChan launch script", () => {
+    const script = claudeCodeChannelsStartScript({
+      identityId: "nukoevi",
+      sessionName: "claude-code-channels-nukoevi",
+      workspace: "/Users/example",
+      channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
+      channels: [
+        { plugin: "telegram", marketplace: "claude-plugins-official" },
+        { plugin: "stackchan", marketplace: "claude-plugins-official" },
+      ],
+      env: {},
+      envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+      model: "haiku",
+      dangerouslySkipPermissions: false,
+    });
+    expect(script).toContain("'--channels' 'plugin:telegram@claude-plugins-official'");
+    expect(script).toContain("'--channels' 'plugin:stackchan@claude-plugins-official'");
+    expect(script).toContain("mcp__plugin:telegram:telegram__reply");
+    expect(script).toContain("mcp__stackchan__reply");
+    expect(script).toContain("'--name' 'nukoevi-telegram'");
+  });
+
   test("builds Telegram channel runtime prompt with reply and image handling", () => {
     const prompt = claudeCodeChannelsSystemPrompt({
       plugin: "telegram",
@@ -994,6 +1019,20 @@ describe("Claude Code Channels", () => {
     expect(prompt).toContain("attachment_file_id");
     expect(prompt).toContain("mcp__plugin_telegram_telegram__download_attachment");
     expect(prompt).toContain("files by absolute path");
+  });
+
+  test("builds Nukoevi channel routing prompt for Telegram and StackChan", () => {
+    const prompt = claudeCodeChannelsSystemPromptForChannels(
+      [
+        { plugin: "telegram", marketplace: "claude-plugins-official" },
+        { plugin: "stackchan", marketplace: "claude-plugins-official" },
+      ],
+      { nukoeviRouting: true },
+    );
+    expect(prompt).toContain("Nukoevi final channel routing rule");
+    expect(prompt).toContain("first send it with plugin:telegram:telegram reply");
+    expect(prompt).toContain("mcp__stackchan__reply");
+    expect(prompt).toContain("do not mirror the message to Telegram");
   });
 
   test("updates an existing Telegram launch script model without dropping channels", () => {
@@ -1025,6 +1064,22 @@ describe("Claude Code Channels", () => {
       "mcp__plugin:telegram:telegram__react",
       "mcp__plugin:telegram:telegram__edit_message",
       "mcp__plugin:telegram:telegram__download_attachment",
+    ]);
+  });
+
+  test("allows combined Telegram and StackChan tools", () => {
+    expect(
+      claudeCodeChannelsAllowedToolsForChannels([
+        { plugin: "telegram", marketplace: "claude-plugins-official" },
+        { plugin: "stackchan", marketplace: "claude-plugins-official" },
+      ]),
+    ).toEqual([
+      "Read",
+      "mcp__plugin:telegram:telegram__reply",
+      "mcp__plugin:telegram:telegram__react",
+      "mcp__plugin:telegram:telegram__edit_message",
+      "mcp__plugin:telegram:telegram__download_attachment",
+      "mcp__stackchan__reply",
     ]);
   });
 
@@ -1145,6 +1200,35 @@ describe("Claude Code Channels", () => {
     expect(inventory.evis["evi-claude-code-channels-nukoevi"].model).toBe("haiku");
     expect(inventory.interfaces["telegram:main"].identityId).toBe("nukoevi");
     expect(inventory.routes["telegram:claude-code-channels:nukoevi"].mode).toBe("primary");
+  });
+
+  test("creates evictl inventory for a Telegram and StackChan character", () => {
+    const data = claudeCodeChannelsTelegramConfig(
+      {},
+      "nukoevi",
+      "/Users/example",
+      "/Users/example/.local/share/claude-telegram-channel",
+      {},
+      true,
+      "haiku",
+      [
+        { plugin: "telegram", marketplace: "claude-plugins-official" },
+        { plugin: "stackchan", marketplace: "claude-plugins-official" },
+      ],
+      {
+        label: "com.local.claude-telegram-channel",
+        plist: "/Users/example/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
+      },
+    );
+    const inventory = loadInventory(data);
+    expect(inventory.targets["claude-code-channels"].label).toBe("com.local.claude-telegram-channel");
+    expect(inventory.targets["claude-code-channels"].plist).toBe(
+      "/Users/example/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
+    );
+    expect(inventory.interfaces["telegram:main"].identityId).toBe("nukoevi");
+    expect(inventory.interfaces["stackchan:main"].identityId).toBe("nukoevi");
+    expect(inventory.routes["telegram:claude-code-channels:nukoevi"].mode).toBe("primary");
+    expect(inventory.routes["stackchan:claude-code-channels:nukoevi"].mode).toBe("primary");
   });
 });
 

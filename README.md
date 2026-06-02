@@ -69,6 +69,12 @@ bun install -g /Users/username/ghq/github.com/schroneko/evictl
 evictl --help
 ```
 
+If `evictl` is not found on a development machine, install the local checkout
+with the command above before running runtime inspection commands.
+If Bun reports that its global bin directory is not on `PATH`, add
+`~/.bun/bin` to `PATH` or expose the installed binary from an existing bin
+directory such as `~/.local/bin`.
+
 Run the CLI directly during development with `bun run src/cli.ts ps`.
 
 `uv tool install` installs commands from Python packages. `evictl` is a Bun CLI,
@@ -176,6 +182,33 @@ Setup commands:
 evictl discover
 evictl import
 evictl interface bind
+evictl channel telegram setup
+```
+
+Claude Code Channels can be generated from evictl without storing Telegram
+tokens, chat IDs, or local memory in the repository. For a Telegram and
+StackChan character, inspect the generated runtime first:
+
+```bash
+evictl channel telegram setup nukoevi \
+  --channel telegram \
+  --channel stackchan \
+  --nukoevi-routing \
+  --dry-run \
+  --json
+```
+
+When applying an existing launchd label, pass the managed runtime paths
+explicitly:
+
+```bash
+evictl channel telegram setup nukoevi \
+  --channel telegram \
+  --channel stackchan \
+  --nukoevi-routing \
+  --state-dir ~/.local/share/claude-telegram-channel \
+  --label com.local.claude-telegram-channel \
+  --plist-path ~/Library/LaunchAgents/com.local.claude-telegram-channel.plist
 ```
 
 Advanced commands:
