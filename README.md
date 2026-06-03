@@ -193,6 +193,7 @@ StackChan character, inspect the generated runtime first:
 evictl channel telegram setup nukoevi \
   --channel telegram \
   --channel stackchan \
+  --plugin-dir ~/ghq/github.com/schroneko/stackchan-nukoevi/channels/stackchan \
   --nukoevi-routing \
   --dry-run \
   --json
@@ -205,6 +206,7 @@ explicitly:
 evictl channel telegram setup nukoevi \
   --channel telegram \
   --channel stackchan \
+  --plugin-dir ~/ghq/github.com/schroneko/stackchan-nukoevi/channels/stackchan \
   --nukoevi-routing \
   --state-dir ~/.local/share/claude-telegram-channel \
   --label com.local.claude-telegram-channel \

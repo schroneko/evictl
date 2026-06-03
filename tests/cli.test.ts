@@ -973,10 +973,7 @@ describe("Claude Code Channels", () => {
     expect(script).toContain("'--tools' 'default'");
     expect(script).toContain("--permission-mode");
     expect(script).toContain("bypassPermissions");
-    expect(script).toContain("--allowedTools");
-    expect(script).toContain("Read");
-    expect(script).toContain("mcp__plugin:telegram:telegram__reply");
-    expect(script).toContain("mcp__plugin:telegram:telegram__download_attachment");
+    expect(script).not.toContain("--allowedTools");
     expect(script).toContain("'--name'");
     expect(script).toContain("'nukoevi-telegram'");
     expect(script).toContain("'--model' 'haiku'");
@@ -1002,9 +999,29 @@ describe("Claude Code Channels", () => {
     });
     expect(script).toContain("'--channels' 'plugin:telegram@claude-plugins-official'");
     expect(script).toContain("'--channels' 'plugin:stackchan@claude-plugins-official'");
-    expect(script).toContain("mcp__plugin:telegram:telegram__reply");
-    expect(script).toContain("mcp__stackchan__reply");
+    expect(script).not.toContain("--allowedTools");
     expect(script).toContain("'--name' 'nukoevi-telegram'");
+  });
+
+  test("loads local plugin directories in a channel launch script", () => {
+    const script = claudeCodeChannelsStartScript({
+      identityId: "nukoevi",
+      sessionName: "claude-code-channels-nukoevi",
+      workspace: "/Users/example",
+      channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
+      channels: [
+        { plugin: "telegram", marketplace: "claude-plugins-official" },
+        { plugin: "stackchan", marketplace: "claude-plugins-official" },
+      ],
+      pluginDirs: ["/Users/example/stackchan-nukoevi/channels/stackchan"],
+      env: {},
+      envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+      model: "haiku",
+      dangerouslySkipPermissions: false,
+    });
+    expect(script).toContain("'--plugin-dir' '/Users/example/stackchan-nukoevi/channels/stackchan'");
+    expect(script).toContain("'--channels' 'plugin:stackchan@claude-plugins-official'");
   });
 
   test("builds Telegram channel runtime prompt with reply and image handling", () => {

@@ -795,6 +795,7 @@ export type ClaudeCodeChannelsStartScriptOptions = {
   workspace: string;
   channel: ClaudeCodeChannelPlugin;
   channels?: ClaudeCodeChannelPlugin[];
+  pluginDirs?: string[];
   env: Record<string, string>;
   envFile: string;
   systemPromptFile: string;
@@ -830,7 +831,6 @@ export function claudeCodeChannelsStartScript(
   options: ClaudeCodeChannelsStartScriptOptions,
 ): string {
   const channels = options.channels?.length ? options.channels : [options.channel];
-  const allowedTools = claudeCodeChannelsAllowedToolsForChannels(channels);
   const args = [
     "--append-system-prompt-file",
     options.systemPromptFile,
@@ -842,11 +842,13 @@ export function claudeCodeChannelsStartScript(
     "--name",
     `${options.identityId}-${channels[0].plugin}`,
   ];
+  for (const pluginDir of options.pluginDirs ?? []) {
+    args.push("--plugin-dir", pluginDir);
+  }
   for (const channel of channels) {
     args.push("--channels", `plugin:${channel.plugin}@${channel.marketplace}`);
   }
   if (options.model) args.push("--model", options.model);
-  if (allowedTools.length > 0) args.push("--allowedTools", allowedTools.join(","));
   if (options.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
   const claudeArgFragments = args.map(shellQuote);
   const tmuxEnvKeys = Array.from(
@@ -3512,6 +3514,17 @@ function claudeCodeChannelsFromArgs(args: string[]): ClaudeCodeChannelPlugin[] {
   return [...channels.values()];
 }
 
+function defaultClaudeCodeChannelsPluginDirs(channels: ClaudeCodeChannelPlugin[]): string[] {
+  const dirs: string[] = []
+  if (channels.some((channel) => channel.plugin === "stackchan")) {
+    const stackchanDir =
+      process.env.STACKCHAN_CHANNEL_PLUGIN_DIR ??
+      join(homedir(), "ghq", "github.com", "schroneko", "stackchan-nukoevi", "channels", "stackchan")
+    if (existsSync(join(stackchanDir, ".claude-plugin", "plugin.json"))) dirs.push(stackchanDir)
+  }
+  return dirs
+}
+
 export function competingHermesEvisForClaudeCodeChannels(
   inventory: Inventory,
   identityId: string,
@@ -3631,6 +3644,12 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const plistPath = optionValue(args, "--plist-path") ?? claudeChannelsLaunchAgentPath();
   const label = optionValue(args, "--label") ?? "com.local.claude-code-channels";
   const channels = claudeCodeChannelsFromArgs(args);
+  const pluginDirs = [
+    ...new Set([
+      ...defaultClaudeCodeChannelsPluginDirs(channels),
+      ...optionValues(args, "--plugin-dir"),
+    ]),
+  ];
   const systemPrompt = claudeCodeChannelsSystemPromptForChannels(channels, {
     nukoeviRouting: hasFlag(args, "--nukoevi-routing"),
   });
@@ -3640,6 +3659,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
     workspace,
     channel: channels[0],
     channels,
+    pluginDirs,
     env,
     envFile,
     systemPromptFile,
@@ -4281,7 +4301,7 @@ Setup commands:
       Store an Anthropic API key from an environment variable for the launchd session.
   channel telegram auth [--json]
       Show whether Claude Code Channels will use Claude Code OAuth or an Anthropic API key.
-  channel telegram setup <character> [--workspace <path>] [--model <model>] [--channel telegram] [--channel stackchan] [--nukoevi-routing] [--dry-run] [--start]
+  channel telegram setup <character> [--workspace <path>] [--model <model>] [--channel telegram] [--channel stackchan] [--plugin-dir <path>] [--nukoevi-routing] [--dry-run] [--start]
       Create the Claude Code Channels launch files, evictl inventory, interfaces, and routes.
   channel telegram model <character> <model> [--restart]
       Update an existing Claude Code Channels launch script model without dropping channel flags.
