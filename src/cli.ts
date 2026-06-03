@@ -831,6 +831,7 @@ export function claudeCodeChannelsStartScript(
   options: ClaudeCodeChannelsStartScriptOptions,
 ): string {
   const channels = options.channels?.length ? options.channels : [options.channel];
+  const usesStackChan = channels.some((channel) => channel.plugin === "stackchan");
   const args = [
     "--append-system-prompt-file",
     options.systemPromptFile,
@@ -851,10 +852,50 @@ export function claudeCodeChannelsStartScript(
   if (options.model) args.push("--model", options.model);
   if (options.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
   const claudeArgFragments = args.map(shellQuote);
+  const stackChanEnvKeys = usesStackChan
+    ? [
+        "STACKCHAN_AGENT_TRANSPORT",
+        "STACKCHAN_AUDIO_WS_WAIT_MS",
+        "STACKCHAN_ASSISTANT_SPEECH_QUEUE_MS",
+        "STACKCHAN_CHANNEL_HOST",
+        "STACKCHAN_CHANNEL_PORT",
+        "STACKCHAN_DIRECT_MCP_CHANNEL",
+        "STACKCHAN_EVICTL_BIN",
+        "STACKCHAN_EVICTL_IDENTITY",
+        "STACKCHAN_IRODORI_TTS_DURATION_SCALE",
+        "STACKCHAN_IRODORI_TTS_ENABLED",
+        "STACKCHAN_IRODORI_TTS_FRAME_DELAY_MS",
+        "STACKCHAN_IRODORI_TTS_KEY",
+        "STACKCHAN_IRODORI_TTS_MQTT_FRAME_DELAY_MS",
+        "STACKCHAN_IRODORI_TTS_SECONDS",
+        "STACKCHAN_IRODORI_TTS_SPEAKER",
+        "STACKCHAN_IRODORI_TTS_STEPS",
+        "STACKCHAN_IRODORI_TTS_URL",
+        "STACKCHAN_IRODORI_TTS_WARMUP_COOLDOWN_MS",
+        "STACKCHAN_IRODORI_TTS_WARMUP_STEPS",
+        "STACKCHAN_IRODORI_TTS_WARMUP_TEXT",
+        "STACKCHAN_PUBLIC_HOST",
+        "STACKCHAN_RELAY_STATE_PATH",
+        "STACKCHAN_REPLY_TIMEOUT_MS",
+        "STACKCHAN_UPSTREAM_OTA_URL",
+        "STACKCHAN_XIAOZHI_LISTENING_STALE_MS",
+      ]
+    : [];
   const tmuxEnvKeys = Array.from(
-    new Set(["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", ...Object.keys(options.env).sort()]),
+    new Set(["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", ...stackChanEnvKeys, ...Object.keys(options.env).sort()]),
   );
   const tmuxEnvKeyLines = tmuxEnvKeys.map((key) => `  ${shellQuote(key)}`);
+  const stackChanEnvFileLines = usesStackChan
+    ? [
+        'stackchan_env_file="$HOME/.config/stackchan/irodori.env"',
+        'if [ -f "$stackchan_env_file" ]',
+        "then",
+        "  set -a",
+        '  source "$stackchan_env_file"',
+        "  set +a",
+        "fi",
+      ]
+    : [];
   const envLines = Object.entries(options.env)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `export ${key}=${shellQuote(value)}`);
@@ -878,6 +919,7 @@ export function claudeCodeChannelsStartScript(
     '  source "$telegram_env_file"',
     "  set +a",
     "fi",
+    ...stackChanEnvFileLines,
     ...envLines,
     "claude_command='claude'",
     'if [ -n "${ANTHROPIC_API_KEY:-}" ]',

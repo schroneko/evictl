@@ -962,6 +962,7 @@ describe("Claude Code Channels", () => {
     expect(script).toContain('telegram_env_file="$HOME/.claude/channels/telegram/.env"');
     expect(script).toContain("source \"$env_file\"");
     expect(script).toContain('source "$telegram_env_file"');
+    expect(script).not.toContain('stackchan_env_file="$HOME/.config/stackchan/irodori.env"');
     expect(script).toContain("export ANTHROPIC_BASE_URL='https://api.example.test'");
     expect(script).toContain('claude_command="${claude_command} --bare"');
     expect(script).toContain("'ANTHROPIC_API_KEY'");
@@ -999,6 +1000,10 @@ describe("Claude Code Channels", () => {
     });
     expect(script).toContain("'--channels' 'plugin:telegram@claude-plugins-official'");
     expect(script).toContain("'--channels' 'plugin:stackchan@claude-plugins-official'");
+    expect(script).toContain('stackchan_env_file="$HOME/.config/stackchan/irodori.env"');
+    expect(script).toContain('source "$stackchan_env_file"');
+    expect(script).toContain("'STACKCHAN_IRODORI_TTS_KEY'");
+    expect(script).toContain("'STACKCHAN_IRODORI_TTS_STEPS'");
     expect(script).not.toContain("--allowedTools");
     expect(script).toContain("'--name' 'nukoevi-telegram'");
   });
