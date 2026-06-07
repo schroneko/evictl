@@ -1,5 +1,7 @@
 # evictl
 
+Japanese: [README.ja.md](README.ja.md)
+
 `evictl` is a local control plane for always-on AI characters. A character keeps
 the same external presence, channels, and memory while its inner engine can be
 switched between independent agent sessions.
@@ -12,8 +14,6 @@ The intended shape is a replicated character control plane: create engine
 deployments, route work to them, supervise their liveness, collect feedback and
 observations, then distribute distilled memory back to the deployments with
 provenance.
-
-Japanese guide: [docs/ja/README.md](docs/ja/README.md)
 
 ## Installation
 
@@ -138,7 +138,7 @@ the timed restart.
 - [docs/configuration.md](docs/configuration.md): inventory model and example
   config
 - [docs/research-notes.md](docs/research-notes.md): research notes
-- [docs/ja/README.md](docs/ja/README.md): Japanese operational guide
+- [README.ja.md](README.ja.md): Japanese operational guide
 
 The Japanese guide is intentionally not a line-by-line translation. Keep it as a
 short operational guide and treat `evictl --help` plus the English docs as the

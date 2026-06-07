@@ -121,10 +121,10 @@ evictl channel telegram setup nukoevi \
 
 ## 詳細
 
-- 英語 README: [../../README.md](../../README.md)
-- 運用詳細: [../operations.md](../operations.md)
-- 設定詳細: [../configuration.md](../configuration.md)
-- 研究メモ: [../research-notes.md](../research-notes.md)
+- 英語 README: [README.md](README.md)
+- 運用詳細: [docs/operations.md](docs/operations.md)
+- 設定詳細: [docs/configuration.md](docs/configuration.md)
+- 研究メモ: [docs/research-notes.md](docs/research-notes.md)
 
 日本語ドキュメントは、日常運用が変わったときだけ更新します。新しい
 オプションや実験的な項目を全部翻訳対象にせず、必要なときは英語 docs と
