@@ -5,51 +5,15 @@ the same external presence, channels, and memory while its inner engine can be
 switched between independent agent sessions.
 
 Engines are the execution substrate that can host one or more deployments for a
-character. When there is only one engine, the character and the engine can look
-identical, but `evictl` keeps the concepts separate so the character can move
-between engines without changing its channels or memory.
-
-The initial engines are:
-
-- OpenClaw
-- Hermes Agent
-- Claude Code Channels
+character. The initial engines are OpenClaw, Hermes Agent, and Claude Code
+Channels.
 
 The intended shape is a replicated character control plane: create engine
 deployments, route work to them, supervise their liveness, collect feedback and
 observations, then distribute distilled memory back to the deployments with
 provenance.
 
-Research notes: [docs/research-notes.md](docs/research-notes.md)
-
-## Development
-
-```bash
-bun install
-bun test
-bun run check
-bun run build
-```
-
-Run the CLI directly during development:
-
-```bash
-bun run src/cli.ts ps
-```
-
-## Automation
-
-`--headless` is a global flag for automation:
-
-```bash
-evictl --headless status
-evictl status --headless
-evictl --headless monitor --once
-```
-
-Headless mode does not imply JSON output or automatic confirmation. It rejects
-commands that would wait indefinitely without an explicit one-shot form. Use
-command-specific `--json` flags where available.
+Japanese guide: [docs/ja/README.md](docs/ja/README.md)
 
 ## Installation
 
@@ -70,29 +34,13 @@ ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/
 evictl --help
 ```
 
-If `evictl` is not found on a development machine, install the local checkout
-with the symlink above before running runtime inspection commands. Avoid
-repeated `bun install -g /path/to/evictl` for local checkout updates because Bun
-can duplicate global dependency entries for the same file path. Keep
+Avoid repeated `bun install -g /path/to/evictl` for local checkout updates
+because Bun can duplicate global dependency entries for the same file path. Keep
 `~/.local/bin` on `PATH`.
-
-Run the CLI directly during development with `bun run src/cli.ts ps`.
-
-`uv tool install` installs commands from Python packages. `evictl` is a Bun CLI,
-so it is not installable through `uv tool` unless a Python wrapper package is
-added.
-
-## Agent Skill
-
-The repository includes an Agent Skill at `skills/evictl`.
-
-Install or vendor it with your agent skill manager, then invoke it when managing
-local characters, engine handoff, routes, or shared memory with `evictl`.
 
 ## Quick Start
 
-These are the commands a first-time user should copy and adjust. Replace `demo`
-with the character name they want to control.
+Replace `demo` with the character name you want to control.
 
 ```bash
 evictl create demo
@@ -106,47 +54,9 @@ evictl status
 The character name is the outside personality. The engine is the inside that
 answers for it.
 
-What the setup commands do:
-
-- `evictl create demo` creates the character record.
-- `evictl migration --dry-run` shows existing Hermes Agent, OpenClaw, and Claude Code Channels instances that can be adopted by evictl.
-- `evictl migration` writes those existing instances into `~/.config/evictl/config.json` without converting provider-native state.
-- `evictl engine list --character demo` shows which engines are available.
-- `evictl switch --character demo --engine claude-code-channels` changes the inner engine.
-- `evictl status` shows what is running.
-
-`migration` only reads local setup on this Mac and writes the evictl config. It
-does not delete provider files, move native memory, download anything, or create
-a remote account. `import` remains available as the lower-level non-guided
-registration command.
-
-In evictl, migration means adoption into the evictl control plane. It discovers
-existing launchd, tmux, process, channel, and native memory locations, then
-records them as evictl targets, evis, interfaces, and routes. It is not a
-Hermes Agent to OpenClaw conversion tool and it does not copy sessions, logs,
-credentials, or provider-owned memory into another runtime. Use `switch` to
-change the active runtime for a character, and use `memory sync` to replicate
-shared memory between runtime-native stores.
-
-When run from a terminal, `evictl migration` asks for confirmation before
-writing config. If two runtimes already own the same channel surface, it asks
-which discovered route should become primary. For automation, use `--yes` to
-accept the non-destructive config write and `--primary-route <route-key>` to
-select the primary route explicitly.
-
-```bash
-evictl switch --character demo --engine hermes-agent
-evictl switch --character demo --engine openclaw
-evictl switch --character demo --engine claude-code-channels
-```
-
-If one engine has multiple deployments for the same character, choose one:
-
-```bash
-evictl switch --character demo --engine claude-code-channels --deployment telegram
-```
-
-Every setup step is explicit and repeatable. Commands never stop to ask questions.
+`migration` adopts existing Hermes Agent, OpenClaw, and Claude Code Channels
+instances into `~/.config/evictl/config.json`. It does not convert, delete, or
+move provider-native files, credentials, sessions, logs, or memory stores.
 
 ## Daily Use
 
@@ -159,36 +69,37 @@ evictl switch --character demo --engine hermes-agent
 evictl status
 ```
 
-To send a task to the current engine behind the character:
+Send a task to the current engine behind the character:
 
 ```bash
 evictl send demo --text "Run the check suite."
 ```
 
-## Commands
-
-Common commands:
+Restart Claude Code Channels Telegram for a character:
 
 ```bash
-evictl create
-evictl switch
-evictl engine list
-evictl status
-evictl send
+evictl channel telegram restart nukoevi
 ```
 
-Setup commands:
+Generic runtime controls are also available:
 
 ```bash
-evictl discover
-evictl import
-evictl interface bind
-evictl channel telegram setup
+evictl evi restart evi-claude-code-channels-nukoevi
+evictl restart claude-code-channels
 ```
+
+For the complete command list, run:
+
+```bash
+evictl --help
+```
+
+## Claude Code Channels
 
 Claude Code Channels can be generated from evictl without storing Telegram
-tokens, chat IDs, or local memory in the repository. For a Telegram and
-StackChan character, inspect the generated runtime first:
+tokens, chat IDs, or local memory in the repository.
+
+Inspect the generated runtime first:
 
 ```bash
 evictl channel telegram setup nukoevi \
@@ -200,8 +111,7 @@ evictl channel telegram setup nukoevi \
   --json
 ```
 
-When applying an existing launchd label, pass the managed runtime paths
-explicitly:
+Apply an existing launchd label and managed runtime paths:
 
 ```bash
 evictl channel telegram setup nukoevi \
@@ -221,341 +131,44 @@ polling sessions that still have a live process. The default is `21600` seconds.
 Set it to `0` with `--env CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS=0` to disable
 the timed restart.
 
-Advanced commands:
+## Documentation
+
+- [docs/operations.md](docs/operations.md): runtime operations, automation,
+  memory sync, and safety model
+- [docs/configuration.md](docs/configuration.md): inventory model and example
+  config
+- [docs/research-notes.md](docs/research-notes.md): research notes
+- [docs/ja/README.md](docs/ja/README.md): Japanese operational guide
+
+The Japanese guide is intentionally not a line-by-line translation. Keep it as a
+short operational guide and treat `evictl --help` plus the English docs as the
+command reference.
+
+## Development
 
 ```bash
-evictl ps
-evictl doctor
-evictl target add
-evictl evi add
-evictl evi clone
-evictl evi start
-evictl evi stop
-evictl evi restart
-evictl identity list
-evictl identity show
-evictl identity add
-evictl identity bind
-evictl interface list
-evictl processor list
-evictl processor switch
-evictl processor launch-plan
-evictl monitor
-evictl stop
-evictl restart
-evictl tail
-evictl route list
-evictl route set
-evictl memory status
-evictl memory promote
-evictl memory search
-evictl memory export
-evictl memory sync
-evictl sync
-evictl feedback
-evictl inspect
+bun install
+bun test
+bun run check
+bun run build
 ```
 
-## Configuration
-
-`evictl` keeps its own inventory of characters, engine deployments, routes, and
-memory sync state. The default config file is:
+Run the CLI directly during development:
 
 ```bash
-~/.config/evictl/config.json
+bun run src/cli.ts ps
 ```
 
-Import the current local setup:
+`--headless` is a global flag for automation:
 
 ```bash
-evictl discover
-evictl migration --dry-run
-evictl migration
-evictl import --dry-run
-evictl import
+evictl --headless status
+evictl status --headless
+evictl --headless monitor --once
 ```
 
-Manage routes:
+Headless mode does not imply JSON output or automatic confirmation. It rejects
+commands that would wait indefinitely without an explicit one-shot form. Use
+command-specific `--json` flags where available.
 
-```bash
-evictl route list
-evictl route set telegram:main --target evi-claude-code-channels-demo --account default --mode primary
-```
-
-Create a character, bind interfaces to it, then switch the engine inside it:
-
-```bash
-evictl create demo
-evictl interface bind telegram:main demo --kind telegram --address main
-evictl interface bind discord:main demo --kind discord --address main
-evictl interface bind mqtt:demo/inbox demo --kind mqtt --address demo/inbox
-evictl engine list --character demo
-evictl engine list --character demo --json
-evictl switch --character demo --engine hermes-agent
-evictl send demo --text "Run from the active processor."
-```
-
-Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to a character. The
-character keeps the same external presence and memory scope while `switch`
-changes the inner engine. Use `--deployment` only when the same character has
-multiple deployments for one engine.
-
-For Claude Code Channels, `processor launch-plan` renders the channel plugins
-from the character's active interfaces:
-
-```bash
-evictl switch --character demo --engine claude-code-channels
-evictl processor launch-plan demo
-evictl processor launch-plan demo --json
-```
-
-Create another runtime target when a replica has its own launchd plist, tmux
-session, or process pattern:
-
-```bash
-evictl target add hermes-agent-grok --provider hermes-agent --label ai.hermes.gateway-grok --plist ~/Library/LaunchAgents/ai.hermes.gateway-grok.plist --tmux hermes-agent-grok --process 'hermes_cli.main.*grok'
-```
-
-Create another engine deployment:
-
-```bash
-evictl evi add --provider claude-code-channels --id evi-claude-code-channels-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
-evictl evi add --provider hermes-agent --id evi-hermes-agent-research --profile research --state-dir ~/.hermes/profiles/research
-evictl evi add --provider openclaw --id evi-openclaw-research --profile research --workspace ~/.openclaw/agents/research/agent
-```
-
-Create Hermes Agent replicas with explicit inference providers:
-
-```bash
-evictl evi add --provider hermes-agent --runtime hermes-agent-grok --id evi-hermes-agent-grok --profile grok --state-dir ~/.hermes/profiles/grok --model-provider grok --model grok-4.3
-evictl evi add --provider hermes-agent --id evi-hermes-agent-codex --profile codex --state-dir ~/.hermes/profiles/codex --model-provider codex
-evictl evi add --provider hermes-agent --id evi-hermes-agent-llama --profile llama --state-dir ~/.hermes/profiles/llama --model-provider llama.cpp --model local-model --base-url http://127.0.0.1:8080/v1
-```
-
-For Hermes Agent, `--model-provider` records the process-level inference
-provider. Aliases such as `grok`, `grok-oauth`, and `supergrok` normalize to
-`xai-oauth`; `codex` normalizes to `openai-codex`; `llama.cpp` normalizes to
-Hermes Agent's `custom` provider. `inspect <evi>` prints the environment that a launchd
-plist, tmux wrapper, or one-shot launcher can use:
-
-```bash
-evictl inspect evi-hermes-agent-grok
-```
-
-`evi clone` creates a new replica entry from an existing evi and records
-`replica_of`.
-`evi start`, `evi stop`, and `evi restart` operate the configured provider
-target for an evi. Use `evictl channel telegram restart <character>` for a
-Claude Code Channels Telegram session restart by character name.
-Fresh runtime-native profile creation is still intentionally adapter-specific:
-the inventory records the desired replica, provider, network, workspace,
-state dir, agent id, session id, model provider, model, base URL, and runtime
-environment, but does not invent provider-specific setup commands.
-
-`migration` adopts existing Hermes Agent, OpenClaw, and Claude Code Channels
-instances into evictl without converting or deleting provider-native files. It
-absorbs runtime differences by recording each instance as an evi, preserving its
-native memory location, and mapping any running channel owner as a primary route.
-It also preserves provider-owned sessions, logs, credentials, indexes, and
-memory stores in place.
-Stopped runtimes are kept as processor candidates through their evi entries, but
-are not imported as routes. Processor switching keeps only the selected active
-processor route, so old processors stay selectable without receiving channel
-traffic.
-
-If OpenClaw has multiple workspaces under `~/.openclaw/agents/*/agent`,
-`migration` adopts each workspace as its own OpenClaw evi. Each adopted evi gets
-a memory provider policy in config that records native state as preserved and
-evictl shared memory as a managed section written only by `memory sync`.
-
-Runtime conversion is not part of `migration`. `switch` changes which adopted
-runtime answers for a character. `memory sync` is the separate command that
-writes evictl-managed shared memory sections into provider-visible memory sinks.
-
-`import` uses the same discovery and config merge path as `migration`, but keeps
-the older compact output for scripts.
-
-`route set` refuses duplicate `primary` ownership for the same
-channel/account/peer unless `--force` is passed.
-
-Record feedback into the shared memory event log:
-
-```bash
-evictl feedback evi-claude-code-channels-demo --verdict remember --text "Prefer explicit route ownership."
-```
-
-Feedback is appended as JSONL with the target evi, source, verdict, confidence,
-subject, and text. This is the first shared-memory sink; later sync commands can
-compile those events into runtime-native memory stores.
-
-Promote and sync memory:
-
-```bash
-evictl memory promote
-evictl memory search ownership
-evictl memory export
-evictl memory sync
-evictl sync
-```
-
-`memory promote` compiles feedback events from the JSONL event log into
-`compiled_notes/feedback.md`.
-
-`memory search` searches the JSONL event log and compiled memory notes. Use
-`--json` for machine-readable results.
-
-`memory export` prints the compiled network memory to stdout.
-
-`memory sync` builds `compiled_notes/network.md` from provider memory sources and
-writes a managed `evictl:network-memory` section back into provider-visible
-sinks:
-
-- Hermes Agent: `<state_dir>/memories/MEMORY.md` and `<state_dir>/memories/USER.md` are sources; `<state_dir>/memories/MEMORY.md` is the managed sink.
-- OpenClaw: `<workspace>/MEMORY.md`, `<workspace>/USER.md`, `<workspace>/IDENTITY.md`, `<workspace>/SOUL.md`, `<workspace>/DREAMS.md`, `<workspace>/dreams.md`, and Markdown files under `<workspace>/memory/` are sources; `<workspace>/MEMORY.md` is the managed sink.
-- Claude Code Channels: Claude Code reads `CLAUDE.md` files and the configured appended prompt. `evictl` writes `<state_dir>/evictl-network-memory.md` and also updates an existing generated prompt file when present.
-
-`sync` runs both event promotion and network memory sync.
-
-Supervise configured providers:
-
-```bash
-evictl monitor --once
-evictl monitor --interval 60
-```
-
-`monitor` checks all configured targets, starts stopped targets through their
-launchd plist when possible, and runs network memory sync after each pass.
-
-Read recent runtime output:
-
-```bash
-evictl tail claude-code-channels
-evictl tail evi-claude-code-channels-demo --lines 120
-```
-
-`tail` reads recent tmux pane output for a configured target or evi.
-
-Protect Tailscale from background Homebrew cask upgrades:
-
-```bash
-evictl tailscale protect
-```
-
-`tailscale protect` disables known Homebrew autoupdate LaunchAgents and scans
-`~/Library/LaunchAgents` for custom Homebrew upgrade agents. It moves matching
-plist files into `~/Library/LaunchAgents.disabled`. This prevents background
-`brew upgrade` runs from quitting, uninstalling, or replacing `tailscale-app`
-while the machine is being used as a remote agent host.
-
-Send a task:
-
-```bash
-evictl send evi-claude-code-channels-demo --text "Run the check suite." --queue-only
-evictl send evi-claude-code-channels-demo --text "Run the check suite."
-evictl send demo --text "Run through the active processor."
-```
-
-`send` records a task event before dispatch. For evi entries with a tmux
-`session_id`, it sends the task into that tmux session. Non-queued sends require
-a configured and running tmux session. Identity targets resolve to their active
-processor evi before dispatch. `--queue-only` records the task without
-delivering it.
-
-Example:
-
-```json
-{
-  "targets": {
-    "claude-code-channels": {
-      "provider": "claude-code-channels",
-      "label": "com.local.claude-code-channels",
-      "plist": "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
-      "tmux_sessions": ["claude-code-channels"],
-      "process_patterns": ["claude.*plugin:(telegram|discord)", "demo-(telegram|discord)", "claude-code-channels"],
-      "health_patterns": ["Listening for channel messages from:"]
-    }
-  },
-  "evis": {
-    "evi-claude-code-channels-demo": {
-      "runtime": "claude-code-channels",
-      "provider": "claude-code-channels",
-      "profile": "demo",
-      "agent_id": "",
-      "session_id": "",
-      "workspace": "~/Documents/claude-code-channels",
-      "state_dir": "~/.local/share/claude-code-channels",
-      "model_provider": "",
-      "model": "",
-      "base_url": "",
-      "env": {}
-    }
-  },
-  "identities": {
-    "demo": {
-      "profile": "demo",
-      "memory_scope": "demo",
-      "active_evi": "evi-claude-code-channels-demo",
-      "description": ""
-    }
-  },
-  "interfaces": {
-    "telegram:main": {
-      "kind": "telegram",
-      "address": "main",
-      "identity_id": "demo",
-      "mode": "primary"
-    },
-    "discord:main": {
-      "kind": "discord",
-      "address": "main",
-      "identity_id": "demo",
-      "mode": "primary"
-    }
-  },
-  "routes": {
-    "telegram:claude-code-channels:demo": {
-      "channel": "telegram",
-      "account_id": "default",
-      "peer_id": "",
-      "target_evi": "evi-claude-code-channels-demo",
-      "mode": "primary"
-    },
-    "discord:claude-code-channels:demo": {
-      "channel": "discord",
-      "account_id": "default",
-      "peer_id": "",
-      "target_evi": "evi-claude-code-channels-demo",
-      "mode": "primary"
-    }
-  },
-  "memory": {
-    "event_log": "~/.local/share/evictl/events.jsonl",
-    "compiled_notes": "~/.local/share/evictl/memory",
-    "provider_policies": {
-      "evi-claude-code-channels-demo": {
-        "native_state": "preserve",
-        "sync_strategy": "managed-section",
-        "description": "Claude Code CLAUDE.md and appended prompt memory stay native",
-        "sources": [
-          "~/Documents/claude-code-channels/CLAUDE.md",
-          "~/Documents/claude-code-channels/.claude/CLAUDE.md",
-          "~/Documents/claude-code-channels/CLAUDE.local.md",
-          "~/.local/share/claude-code-channels/evictl-network-memory.md"
-        ],
-        "sinks": [
-          "~/.local/share/claude-code-channels/evictl-network-memory.md"
-        ]
-      }
-    }
-  }
-}
-```
-
-## Safety Model
-
-`evictl` prevents accidental duplicate ownership of the same human-facing
-channel, account, peer, or session. Multiple engine deployments are allowed, but
-fanout and mirror routes must be explicit.
-
-Shared memory is compiled from provenance-rich events instead of blindly copying
-raw transcripts between runtimes.
+The repository includes an Agent Skill at `skills/evictl`.
