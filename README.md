@@ -138,11 +138,10 @@ the timed restart.
 - [docs/configuration.md](docs/configuration.md): inventory model and example
   config
 - [docs/research-notes.md](docs/research-notes.md): research notes
-- [README.ja.md](README.ja.md): Japanese operational guide
+- [README.ja.md](README.ja.md): Japanese translation of this README
 
-The Japanese guide is intentionally not a line-by-line translation. Keep it as a
-short operational guide and treat `evictl --help` plus the English docs as the
-command reference.
+`README.md` is the source of truth. When changing `README.md`, update
+`README.ja.md` in the same change.
 
 ## Development
 

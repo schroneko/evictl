@@ -14,6 +14,8 @@ Use this skill when the user asks to inspect, install, publish, debug, or operat
 2. Use Bun for all project commands.
 3. Prefer read-only inspection commands before changing runtime state.
 4. Run validation after code or packaging changes.
+5. Treat `README.md` as the source of truth and update `README.ja.md` whenever
+   `README.md` changes.
 
 ## Commands
 
