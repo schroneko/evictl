@@ -231,6 +231,7 @@ evictl evi add
 evictl evi clone
 evictl evi start
 evictl evi stop
+evictl evi restart
 evictl identity list
 evictl identity show
 evictl identity add
@@ -241,6 +242,7 @@ evictl processor switch
 evictl processor launch-plan
 evictl monitor
 evictl stop
+evictl restart
 evictl tail
 evictl route list
 evictl route set
@@ -342,7 +344,9 @@ evictl inspect evi-hermes-agent-grok
 
 `evi clone` creates a new replica entry from an existing evi and records
 `replica_of`.
-`evi start` and `evi stop` operate the configured provider target for an evi.
+`evi start`, `evi stop`, and `evi restart` operate the configured provider
+target for an evi. Use `evictl channel telegram restart <character>` for a
+Claude Code Channels Telegram session restart by character name.
 Fresh runtime-native profile creation is still intentionally adapter-specific:
 the inventory records the desired replica, provider, network, workspace,
 state dir, agent id, session id, model provider, model, base URL, and runtime

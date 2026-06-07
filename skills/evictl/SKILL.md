@@ -69,8 +69,9 @@ evictl tail <target-or-evi>
 
 ## Safety rules
 
-- Treat `start`, `stop`, `stop-all`, `use`, `evi start`, `evi stop`,
-  `route set --force`, and non-queued `send` as runtime-affecting commands.
+- Treat `start`, `stop`, `restart`, `stop-all`, `use`, `evi start`,
+  `evi stop`, `evi restart`, `channel telegram restart`, `route set --force`,
+  and non-queued `send` as runtime-affecting commands.
 - Use `--dry-run`, `--json`, or `--queue-only` when validating behavior without
   changing active agent sessions.
 - Use `evictl migration --dry-run` to inspect existing Hermes Agent, OpenClaw,

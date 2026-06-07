@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -159,6 +159,24 @@ describe("global options", () => {
 
   test("rejects open-ended monitor in headless mode", () => {
     expect(() => main(["--headless", "monitor"])).toThrow("monitor --headless requires --once");
+  });
+});
+
+describe("help", () => {
+  test("lists restart commands", () => {
+    const logs: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((message) => {
+      logs.push(String(message));
+    });
+    try {
+      expect(main(["--help"])).toBe(0);
+    } finally {
+      log.mockRestore();
+    }
+    const output = logs.join("\n");
+    expect(output).toContain("channel telegram restart <character>");
+    expect(output).toContain("evi restart <evi>");
+    expect(output).toContain("restart <target>");
   });
 });
 

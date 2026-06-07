@@ -3298,6 +3298,17 @@ function cmdEviStop(args: string[]): number {
   return 0;
 }
 
+function cmdEviRestart(args: string[]): number {
+  const eviId = required(args[0], "evi restart requires an evi id");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const { target } = resolveEviTarget(inventory, eviId);
+  stopTarget(target);
+  bootstrap(target);
+  printStatuses([statusFor(target)]);
+  return 0;
+}
+
 function cmdIdentityList(): number {
   const inventory = loadInventory();
   const identities = Object.values(inventory.identities);
@@ -3884,6 +3895,14 @@ function cmdChannelTelegramStart(args: string[]): number {
   return startClaudeCodeChannelsIdentity(identityId, path);
 }
 
+function cmdChannelTelegramRestart(args: string[]): number {
+  const identityId = required(args[0], "channel telegram restart requires an identity");
+  const path = optionValue(args, "--config") ?? configPath();
+  const eviId = `evi-claude-code-channels-${slug(identityId)}`;
+  cmdEviStop([eviId, "--config", path]);
+  return startClaudeCodeChannelsIdentity(identityId, path);
+}
+
 function cmdChannelTelegramModel(args: string[]): number {
   const identityId = required(args[0], "channel telegram model requires an identity");
   const model = required(args[1], "channel telegram model requires a model");
@@ -3904,8 +3923,7 @@ function cmdChannelTelegramModel(args: string[]): number {
   console.log(`model=${model}`);
   console.log(`start_script=${startScript}`);
   if (hasFlag(args, "--restart")) {
-    cmdEviStop([eviId, "--config", path]);
-    return startClaudeCodeChannelsIdentity(identityId, path);
+    return cmdChannelTelegramRestart([identityId, "--config", path]);
   }
   return 0;
 }
@@ -4306,6 +4324,15 @@ function cmdStop(args: string[]): number {
   return 0;
 }
 
+function cmdRestart(args: string[]): number {
+  const targets = loadTargets();
+  const key = resolveTarget(required(args[0], "restart requires a target"), targets);
+  stopTarget(targets[key]);
+  bootstrap(targets[key]);
+  printStatuses([statusFor(targets[key])]);
+  return 0;
+}
+
 function cmdStopAll(): number {
   const targets = loadTargets();
   for (const target of Object.values(targets)) stopTarget(target);
@@ -4447,6 +4474,10 @@ Setup commands:
       Show whether Claude Code Channels will use Claude Code OAuth or an Anthropic API key.
   channel telegram setup <character> [--workspace <path>] [--model <model>] [--channel telegram] [--channel stackchan] [--plugin-dir <path>] [--nukoevi-routing] [--dry-run] [--start]
       Create the Claude Code Channels launch files, evictl inventory, interfaces, and routes.
+  channel telegram start <character>
+      Start or repair the Claude Code Channels Telegram runtime for a character.
+  channel telegram restart <character>
+      Restart the Claude Code Channels Telegram runtime for a character.
   channel telegram model <character> <model> [--restart]
       Update an existing Claude Code Channels launch script model without dropping channel flags.
   channel telegram pair <character> <code>
@@ -4462,6 +4493,7 @@ Advanced commands:
   evi clone <source-evi> [--provider <provider>] [--runtime <target>] [--id <evi>] [--profile <profile>] [--workspace <path>] [--state-dir <path>] [--model-provider <provider>] [--model <model>] [--base-url <url>] [--env KEY=VALUE] [--force]
   evi start <evi>
   evi stop <evi>
+  evi restart <evi>
   identity list
   identity show <identity>
   identity add <identity> [--profile <profile>] [--memory-scope <scope>] [--description <text>] [--force]
@@ -4479,6 +4511,7 @@ Advanced commands:
   processor launch-plan <identity> [--json]
   start <target>
   stop <target>
+  restart <target>
   stop-all
   use <target>
   monitor [--once] [--interval <seconds>]
@@ -4510,6 +4543,7 @@ export function main(argv = process.argv.slice(2)): number {
     targets: () => cmdTargets(),
     start: cmdStart,
     stop: cmdStop,
+    restart: cmdRestart,
     "stop-all": () => cmdStopAll(),
     use: cmdUse,
     monitor: cmdMonitor,
@@ -4542,6 +4576,8 @@ export function main(argv = process.argv.slice(2)): number {
     return cmdChannelTelegramSetup(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "start")
     return cmdChannelTelegramStart(args.slice(2));
+  if (command === "channel" && args[0] === "telegram" && args[1] === "restart")
+    return cmdChannelTelegramRestart(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "model")
     return cmdChannelTelegramModel(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "pair")
@@ -4555,6 +4591,7 @@ export function main(argv = process.argv.slice(2)): number {
   if (command === "evi" && args[0] === "clone") return cmdEviClone(args.slice(1));
   if (command === "evi" && args[0] === "start") return cmdEviStart(args.slice(1));
   if (command === "evi" && args[0] === "stop") return cmdEviStop(args.slice(1));
+  if (command === "evi" && args[0] === "restart") return cmdEviRestart(args.slice(1));
   if (command === "identity" && args[0] === "list") return cmdIdentityList();
   if (command === "identity" && args[0] === "show") return cmdIdentityShow(args.slice(1));
   if (command === "identity" && args[0] === "add") return cmdIdentityAdd(args.slice(1));
