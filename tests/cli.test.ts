@@ -953,6 +953,7 @@ describe("Claude Code Channels", () => {
       channel: { plugin: "telegram", marketplace: "claude-plugins-official" },
       env: { ANTHROPIC_BASE_URL: "https://api.example.test" },
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      settingsFile: "/Users/example/.local/share/claude-telegram-channel/settings.json",
       systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       model: "haiku",
       dangerouslySkipPermissions: false,
@@ -969,6 +970,11 @@ describe("Claude Code Channels", () => {
     expect(script).toContain("'TELEGRAM_BOT_TOKEN'");
     expect(script).toContain('tmux_env_args+=(-e "$key=${(P)key}")');
     expect(script).toContain('command="exec ${claude_command}"');
+    expect(script).toContain('max_session_seconds="${CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS:-21600}"');
+    expect(script).toContain('tmux display-message -p -t "$session_name" "#{session_created}"');
+    expect(script).toContain('tmux kill-session -t "$session_name"');
+    expect(script).toContain("--settings");
+    expect(script).toContain("/Users/example/.local/share/claude-telegram-channel/settings.json");
     expect(script).toContain("--append-system-prompt-file");
     expect(script).toContain("/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md");
     expect(script).toContain("'--tools' 'default'");
@@ -994,6 +1000,7 @@ describe("Claude Code Channels", () => {
       ],
       env: {},
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      settingsFile: "/Users/example/.local/share/claude-telegram-channel/settings.json",
       systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       model: "haiku",
       dangerouslySkipPermissions: false,
@@ -1002,7 +1009,12 @@ describe("Claude Code Channels", () => {
     expect(script).toContain("'--channels' 'plugin:stackchan@claude-plugins-official'");
     expect(script).toContain('stackchan_env_file="$HOME/.config/stackchan/irodori.env"');
     expect(script).toContain('source "$stackchan_env_file"');
+    expect(script).toContain("hf auth token");
+    expect(script).toContain("'STACKCHAN_IRODORI_HF_TOKEN'");
+    expect(script).toContain("'STACKCHAN_IRODORI_TTS_AUDIO_TRANSPORT'");
     expect(script).toContain("'STACKCHAN_IRODORI_TTS_KEY'");
+    expect(script).toContain("'STACKCHAN_IRODORI_TTS_PROVIDER'");
+    expect(script).toContain("'STACKCHAN_IRODORI_TTS_RATE_LIMIT_COOLDOWN_MS'");
     expect(script).toContain("'STACKCHAN_IRODORI_TTS_STEPS'");
     expect(script).not.toContain("--allowedTools");
     expect(script).toContain("'--name' 'nukoevi-telegram'");
@@ -1021,6 +1033,7 @@ describe("Claude Code Channels", () => {
       pluginDirs: ["/Users/example/stackchan-nukoevi/channels/stackchan"],
       env: {},
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
+      settingsFile: "/Users/example/.local/share/claude-telegram-channel/settings.json",
       systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       model: "haiku",
       dangerouslySkipPermissions: false,
@@ -1052,7 +1065,7 @@ describe("Claude Code Channels", () => {
       { nukoeviRouting: true },
     );
     expect(prompt).toContain("Nukoevi final channel routing rule");
-    expect(prompt).toContain("first send it with plugin:telegram:telegram reply");
+    expect(prompt).toContain("call tools in this exact order");
     expect(prompt).toContain("mcp__stackchan__reply");
     expect(prompt).toContain("do not mirror the message to Telegram");
   });
@@ -1483,6 +1496,7 @@ describe("tmux send", () => {
     const commands = tmuxSendCommands("evi-session", "C-c rm -rf /");
     expect(commands).toEqual([
       ["tmux", "send-keys", "-t", "evi-session", "-l", "--", "C-c rm -rf /"],
+      ["sleep", "0.2"],
       ["tmux", "send-keys", "-t", "evi-session", "Enter"],
     ]);
   });

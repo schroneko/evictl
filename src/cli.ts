@@ -798,6 +798,7 @@ export type ClaudeCodeChannelsStartScriptOptions = {
   pluginDirs?: string[];
   env: Record<string, string>;
   envFile: string;
+  settingsFile?: string;
   systemPromptFile: string;
   model: string;
   dangerouslySkipPermissions: boolean;
@@ -833,6 +834,7 @@ export function claudeCodeChannelsStartScript(
   const channels = options.channels?.length ? options.channels : [options.channel];
   const usesStackChan = channels.some((channel) => channel.plugin === "stackchan");
   const args = [
+    ...(options.settingsFile ? ["--settings", options.settingsFile] : []),
     "--append-system-prompt-file",
     options.systemPromptFile,
     "--tools",
@@ -862,16 +864,24 @@ export function claudeCodeChannelsStartScript(
         "STACKCHAN_DIRECT_MCP_CHANNEL",
         "STACKCHAN_EVICTL_BIN",
         "STACKCHAN_EVICTL_IDENTITY",
+        "STACKCHAN_HTTP_SERVER_ENABLED",
+        "STACKCHAN_IRODORI_HF_TOKEN",
+        "STACKCHAN_IRODORI_TTS_AUDIO_TRANSPORT",
+        "STACKCHAN_IRODORI_TTS_CAPTION",
         "STACKCHAN_IRODORI_TTS_DURATION_SCALE",
         "STACKCHAN_IRODORI_TTS_ENABLED",
         "STACKCHAN_IRODORI_TTS_FRAME_DELAY_MS",
         "STACKCHAN_IRODORI_TTS_KEY",
         "STACKCHAN_IRODORI_TTS_MQTT_FRAME_DELAY_MS",
+        "STACKCHAN_IRODORI_TTS_PROVIDER",
+        "STACKCHAN_IRODORI_TTS_RATE_LIMIT_COOLDOWN_MS",
         "STACKCHAN_IRODORI_TTS_SECONDS",
+        "STACKCHAN_IRODORI_TTS_SEED",
         "STACKCHAN_IRODORI_TTS_SPEAKER",
         "STACKCHAN_IRODORI_TTS_STEPS",
         "STACKCHAN_IRODORI_TTS_URL",
         "STACKCHAN_IRODORI_TTS_WARMUP_COOLDOWN_MS",
+        "STACKCHAN_IRODORI_TTS_WARMUP_ON_LISTEN",
         "STACKCHAN_IRODORI_TTS_WARMUP_STEPS",
         "STACKCHAN_IRODORI_TTS_WARMUP_TEXT",
         "STACKCHAN_PUBLIC_HOST",
@@ -882,7 +892,14 @@ export function claudeCodeChannelsStartScript(
       ]
     : [];
   const tmuxEnvKeys = Array.from(
-    new Set(["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", ...stackChanEnvKeys, ...Object.keys(options.env).sort()]),
+    new Set([
+      "ANTHROPIC_API_KEY",
+      "HF_TOKEN",
+      "HUGGING_FACE_HUB_TOKEN",
+      "TELEGRAM_BOT_TOKEN",
+      ...stackChanEnvKeys,
+      ...Object.keys(options.env).sort(),
+    ]),
   );
   const tmuxEnvKeyLines = tmuxEnvKeys.map((key) => `  ${shellQuote(key)}`);
   const stackChanEnvFileLines = usesStackChan
@@ -920,6 +937,18 @@ export function claudeCodeChannelsStartScript(
     "  set +a",
     "fi",
     ...stackChanEnvFileLines,
+    ...(usesStackChan
+      ? [
+          'if [ -z "${STACKCHAN_IRODORI_HF_TOKEN:-}" ] && command -v hf >/dev/null 2>&1',
+          "then",
+          '  hf_token="$(hf auth token 2>/dev/null || true)"',
+          '  if [ -n "$hf_token" ]',
+          "  then",
+          '    export STACKCHAN_IRODORI_HF_TOKEN="$hf_token"',
+          "  fi",
+          "fi",
+        ]
+      : []),
     ...envLines,
     "claude_command='claude'",
     'if [ -n "${ANTHROPIC_API_KEY:-}" ]',
@@ -939,9 +968,21 @@ export function claudeCodeChannelsStartScript(
     "  fi",
     "done",
     'command="exec ${claude_command}"',
+    'max_session_seconds="${CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS:-21600}"',
     'if tmux has-session -t "$session_name" 2>/dev/null',
     "then",
-    "  exit 0",
+    '  if [ "$max_session_seconds" = "0" ]',
+    "  then",
+    "    exit 0",
+    "  fi",
+    '  now="$(date +%s)"',
+    '  session_created="$(tmux display-message -p -t "$session_name" "#{session_created}" 2>/dev/null || echo 0)"',
+    '  if [[ "$max_session_seconds" = <-> ]] && [[ "$session_created" = <-> ]] && [ "$session_created" -gt 0 ] && [ "$((now - session_created))" -ge "$max_session_seconds" ]',
+    "  then",
+    '    tmux kill-session -t "$session_name"',
+    "  else",
+    "    exit 0",
+    "  fi",
     "fi",
     'tmux new-session -d -s "$session_name" "${tmux_env_args[@]}" -c "$workdir" -- "$command"',
     "",
@@ -989,11 +1030,13 @@ export function claudeCodeChannelsSystemPrompt(channel: ClaudeCodeChannelPlugin)
 
 export function claudeCodeChannelsSystemPromptForChannels(
   channels: ClaudeCodeChannelPlugin[],
-  options: { nukoeviRouting?: boolean } = {},
+  options: { nukoeviRouting?: boolean; baseSystemPrompt?: string } = {},
 ): string {
-  const parts = channels
+  const parts = [
+    options.baseSystemPrompt?.trim() ?? "",
+    ...channels
     .map((channel) => claudeCodeChannelsSystemPrompt(channel))
-    .filter((part) => part.trim().length > 0);
+  ].filter((part) => part.trim().length > 0);
   if (channels.some((channel) => channel.plugin === "stackchan")) {
     parts.push(
       [
@@ -1028,6 +1071,19 @@ export function claudeCodeChannelsSystemPromptForChannels(
     );
   }
   return parts.join("\n");
+}
+
+function claudeCodeChannelsNukoeviFallbackSystemPrompt(): string {
+  return [
+    "# Nukoevi persona",
+    "",
+    "You are ぬこエビ, a small apprentice EVI for ぬこぬこさん.",
+    "When asked your name or identity, answer that you are ぬこエビちゃん, not Claude Code.",
+    "Do not use the Imouto persona, sister tone, or call the user おにいちゃん.",
+    "Call the user ぬこぬこさん.",
+    "Keep responses concise, friendly, practical, and in Japanese unless asked otherwise.",
+    "",
+  ].join("\n");
 }
 
 export function claudeCodeChannelsStartScriptWithModel(script: string, model: string): string {
@@ -2844,6 +2900,7 @@ export function syncNetworkMemory(inventory: Inventory): MemorySyncResult {
 export function tmuxSendCommands(sessionId: string, text: string): string[][] {
   return [
     ["tmux", "send-keys", "-t", sessionId, "-l", "--", text],
+    ["sleep", "0.2"],
     ["tmux", "send-keys", "-t", sessionId, "Enter"],
   ];
 }
@@ -3548,6 +3605,14 @@ function claudeChannelsSystemPromptPath(stateDir = claudeChannelsStateDir()): st
   return join(stateDir, "channels-system-prompt.md");
 }
 
+function claudeChannelsSettingsPath(stateDir = claudeChannelsStateDir()): string {
+  return join(stateDir, "settings.json");
+}
+
+function claudeChannelsNukoeviSystemPromptPath(stateDir = claudeChannelsStateDir()): string {
+  return join(stateDir, "nukoevi-system.generated.md");
+}
+
 function claudeCodeChannelsFromArgs(args: string[]): ClaudeCodeChannelPlugin[] {
   const names = optionValues(args, "--channel");
   const selected = names.length > 0 ? names : ["telegram"];
@@ -3687,6 +3752,8 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const sessionName = `claude-code-channels-${slug(identityId)}`;
   const startScript = join(stateDir, "start.sh");
   const systemPromptFile = claudeChannelsSystemPromptPath(stateDir);
+  const settingsFile = claudeChannelsSettingsPath(stateDir);
+  const nukoeviSystemPromptFile = claudeChannelsNukoeviSystemPromptPath(stateDir);
   const plistPath = optionValue(args, "--plist-path") ?? claudeChannelsLaunchAgentPath();
   const label = optionValue(args, "--label") ?? "com.local.claude-code-channels";
   const channels = claudeCodeChannelsFromArgs(args);
@@ -3696,9 +3763,29 @@ function cmdChannelTelegramSetup(args: string[]): number {
       ...optionValues(args, "--plugin-dir"),
     ]),
   ];
+  const nukoeviRouting = hasFlag(args, "--nukoevi-routing");
+  const baseSystemPrompt =
+    nukoeviRouting && existsSync(nukoeviSystemPromptFile)
+      ? readFileSync(nukoeviSystemPromptFile, "utf8")
+      : nukoeviRouting
+        ? claudeCodeChannelsNukoeviFallbackSystemPrompt()
+        : "";
   const systemPrompt = claudeCodeChannelsSystemPromptForChannels(channels, {
-    nukoeviRouting: hasFlag(args, "--nukoevi-routing"),
+    nukoeviRouting,
+    baseSystemPrompt,
   });
+  const settingsContent = JSON.stringify(
+    {
+      channelsEnabled: true,
+      allowedChannels: channels.map(
+        (channel) => `plugin:${channel.plugin}@${channel.marketplace}`,
+      ),
+      allowedChannelPlugins: channels,
+      claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")],
+    },
+    null,
+    2,
+  );
   const startScriptContent = claudeCodeChannelsStartScript({
     identityId,
     sessionName,
@@ -3708,6 +3795,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
     pluginDirs,
     env,
     envFile,
+    settingsFile,
     systemPromptFile,
     model,
     dangerouslySkipPermissions: hasFlag(args, "--dangerously-skip-permissions"),
@@ -3739,10 +3827,13 @@ function cmdChannelTelegramSetup(args: string[]): number {
             evi: `evi-claude-code-channels-${slug(identityId)}`,
             channels: channels.map((channel) => channel.plugin),
             startScript,
+            settingsFile,
             systemPromptFile,
+            nukoeviSystemPromptFile: nukoeviRouting ? nukoeviSystemPromptFile : undefined,
             plistPath,
             configPath: path,
             startScriptContent,
+            settingsContent,
             systemPrompt,
             plistContent,
             config: next,
@@ -3757,6 +3848,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
   } else {
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(settingsFile, `${settingsContent}\n`);
     writeFileSync(systemPromptFile, systemPrompt);
     writeFileSync(startScript, startScriptContent, { mode: 0o755 });
     chmodSync(startScript, 0o755);

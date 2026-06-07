@@ -213,6 +213,13 @@ evictl channel telegram setup nukoevi \
   --plist-path ~/Library/LaunchAgents/com.local.claude-telegram-channel.plist
 ```
 
+The generated `start.sh` is a launchd watchdog. When the tmux session already
+exists, it normally leaves it alone, but it restarts Claude Code Channels after
+`CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS` seconds to avoid stale channel
+polling sessions that still have a live process. The default is `21600` seconds.
+Set it to `0` with `--env CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS=0` to disable
+the timed restart.
+
 Advanced commands:
 
 ```bash
