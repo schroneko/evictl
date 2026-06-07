@@ -1088,8 +1088,14 @@ function claudeCodeChannelsNukoeviFallbackSystemPrompt(): string {
 
 export function claudeCodeChannelsStartScriptWithModel(script: string, model: string): string {
   const modelArg = shellQuote(model);
+  if (/'--model'\s+'[^']*'/.test(script)) {
+    return script.replace(/'--model'\s+'[^']*'/, `'--model' ${modelArg}`);
+  }
   if (/\s--model\s+('[^']*'|"[^"]*"|[^\s"]+)/.test(script)) {
     return script.replace(/\s--model\s+('[^']*'|"[^"]*"|[^\s"]+)/, ` --model ${modelArg}`);
+  }
+  if (script.includes(" '--channels' ")) {
+    return script.replace(" '--channels' ", ` '--model' ${modelArg} '--channels' `);
   }
   if (script.includes(" --channels ")) {
     return script.replace(" --channels ", ` --model ${modelArg} --channels `);

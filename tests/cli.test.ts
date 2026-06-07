@@ -1080,6 +1080,14 @@ describe("Claude Code Channels", () => {
     expect(next).toContain("--allowedTools Read,mcp__plugin:telegram:telegram__reply");
   });
 
+  test("updates a generated quoted Telegram launch script model without dropping channels", () => {
+    const script =
+      "claude_command=\"${claude_command} '--settings' '/tmp/settings.json' '--channels' 'plugin:telegram@claude-plugins-official' '--model' 'haiku'\"";
+    const next = claudeCodeChannelsStartScriptWithModel(script, "claude-opus-4-8");
+    expect(next).toContain("'--model' 'claude-opus-4-8'");
+    expect(next).toContain("'--channels' 'plugin:telegram@claude-plugins-official'");
+  });
+
   test("adds a model to an existing Telegram launch script without dropping channels", () => {
     const script =
       "claude --tools default --allowedTools Read,mcp__plugin:telegram:telegram__reply --channels plugin:telegram@claude-plugins-official";
