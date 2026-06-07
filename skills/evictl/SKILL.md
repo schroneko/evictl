@@ -30,13 +30,14 @@ If the `evictl` command is missing while working from the local checkout, instal
 that checkout before runtime inspection:
 
 ```bash
-bun install -g /Users/username/ghq/github.com/schroneko/evictl
+mkdir -p ~/.local/bin
+ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/evictl
 evictl --help
 ```
 
-If Bun warns that its global bin directory is not on `PATH`, add `~/.bun/bin`
-to `PATH` or expose the installed binary from an existing bin directory such as
-`~/.local/bin`.
+Avoid repeated `bun install -g /path/to/evictl` for local checkout updates
+because Bun can duplicate global dependency entries for the same file path. Keep
+`~/.local/bin` on `PATH`.
 
 Packaging checks:
 
