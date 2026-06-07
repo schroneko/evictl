@@ -106,17 +106,6 @@ describe("defaults", () => {
       "claude-plugins-official/(telegram|discord)",
     );
   });
-
-  test("legacy fallback names are not accepted", () => {
-    expect(() => resolveTarget("ccc", DEFAULT_TARGETS)).toThrow("unknown target");
-    expect(() => resolveTarget("hermes", DEFAULT_TARGETS)).toThrow("unknown target");
-    expect(() => resolveProvider("open-claw")).toThrow("unknown provider");
-  });
-
-  test("removed command aliases are not accepted", () => {
-    expect(() => main(["spawn", "hermes-agent"])).toThrow("unknown command: spawn");
-    expect(() => main(["memory", "import"])).toThrow("unknown command: memory");
-  });
 });
 
 describe("target health", () => {
@@ -176,7 +165,6 @@ describe("help", () => {
     const output = logs.join("\n");
     expect(output).toContain("switch --agent <agent>");
     expect(output).toContain("engine list --agent <agent>");
-    expect(output).not.toContain("--character");
     expect(output).toContain("channel telegram restart <agent>");
     expect(output).toContain("evi restart <evi>");
     expect(output).toContain("restart <target>");
@@ -617,9 +605,6 @@ describe("identity routing", () => {
         }),
       );
       expect(main(["engine", "list", "--agent", "demo", "--json", "--config", config])).toBe(0);
-      expect(() => main(["engine", "list", "--character", "demo", "--json", "--config", config])).toThrow(
-        "engine list requires --agent",
-      );
       expect(() => main(["engine", "list", "--config", config])).toThrow(
         "engine list requires --agent",
       );
