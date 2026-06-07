@@ -174,7 +174,7 @@ describe("help", () => {
       log.mockRestore();
     }
     const output = logs.join("\n");
-    expect(output).toContain("channel telegram restart <character>");
+    expect(output).toContain("channel telegram restart <agent>");
     expect(output).toContain("evi restart <evi>");
     expect(output).toContain("restart <target>");
   });
@@ -543,8 +543,8 @@ describe("routes", () => {
 });
 
 describe("identity routing", () => {
-  test("creates a character from the public create command", () => {
-    const root = mkdtempSync(join(tmpdir(), "evictl-create-character-test-"));
+  test("creates an AI agent from the public create command", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-create-agent-test-"));
     try {
       const config = join(root, "config.json");
       expect(main(["create", "demo", "--config", config])).toBe(0);
@@ -563,7 +563,7 @@ describe("identity routing", () => {
     }
   });
 
-  test("resolves a character engine without profile input", () => {
+  test("resolves an AI agent engine without profile input", () => {
     const inventory = loadInventory({
       evis: {
         "evi-claude-code-channels": {
@@ -622,7 +622,7 @@ describe("identity routing", () => {
     }
   });
 
-  test("requires deployment when a character engine has multiple equal matches", () => {
+  test("requires deployment when an AI agent engine has multiple equal matches", () => {
     const inventory = loadInventory({
       evis: {
         "evi-claude-code-channels-alpha": {
@@ -1144,7 +1144,7 @@ describe("Claude Code Channels", () => {
     ]);
   });
 
-  test("selects same-character Hermes evis as Telegram poller competitors", () => {
+  test("selects same-agent Hermes evis as Telegram poller competitors", () => {
     const inventory = loadInventory({
       evis: {
         "evi-hermes-agent-demo": {
@@ -1240,7 +1240,7 @@ describe("Claude Code Channels", () => {
     }
   });
 
-  test("creates evictl inventory for a Telegram-backed character", () => {
+  test("creates evictl inventory for a Telegram-backed AI agent", () => {
     const data = claudeCodeChannelsTelegramConfig(
       {},
       "nukoevi",
@@ -1263,7 +1263,7 @@ describe("Claude Code Channels", () => {
     expect(inventory.routes["telegram:claude-code-channels:nukoevi"].mode).toBe("primary");
   });
 
-  test("creates evictl inventory for a Telegram and StackChan character", () => {
+  test("creates evictl inventory for a Telegram and StackChan AI agent", () => {
     const data = claudeCodeChannelsTelegramConfig(
       {},
       "nukoevi",

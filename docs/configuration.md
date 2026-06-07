@@ -1,6 +1,6 @@
 # Configuration
 
-`evictl` keeps its own inventory of characters, engine deployments, routes, and
+`evictl` keeps its own inventory of AI agents, engine deployments, routes, and
 memory sync state. The default config file is:
 
 ```bash
@@ -22,7 +22,7 @@ processor route, so old processors stay selectable without receiving channel
 traffic.
 
 Runtime conversion is not part of `migration`. `switch` changes which adopted
-runtime answers for a character. `memory sync` is the separate command that
+runtime answers for an AI agent. `memory sync` is the separate command that
 writes evictl-managed shared memory sections into provider-visible memory sinks.
 
 `import` uses the same discovery and config merge path as `migration`, but keeps
@@ -40,7 +40,7 @@ evictl route set telegram:main --target evi-claude-code-channels-demo --account 
 `route set` refuses duplicate `primary` ownership for the same
 channel/account/peer unless `--force` is passed.
 
-Create a character, bind interfaces to it, then switch the engine inside it:
+Create an AI agent, bind interfaces to it, then switch the engine inside it:
 
 ```bash
 evictl create demo

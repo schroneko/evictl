@@ -28,7 +28,7 @@ bun run check
 bun run build
 ```
 
-If the `evictl` command is missing while working from the local checkout, install
+If the `evictl` command is missing while working from the local checkout, expose
 that checkout before runtime inspection:
 
 ```bash
@@ -37,9 +37,9 @@ ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/
 evictl --help
 ```
 
-Avoid repeated `bun install -g /path/to/evictl` for local checkout updates
-because Bun can duplicate global dependency entries for the same file path. Keep
-`~/.local/bin` on `PATH`.
+Use `bun install -g evictl` for the published package. Avoid repeated
+`bun install -g /path/to/evictl` for local checkout updates because Bun can
+duplicate global dependency entries for the same file path.
 
 Packaging checks:
 

@@ -49,8 +49,8 @@ evictl tail evi-claude-code-channels-demo --lines 120
 ```
 
 `evi start`, `evi stop`, and `evi restart` operate the configured provider
-target for an evi. Use `evictl channel telegram restart <character>` for a
-Claude Code Channels Telegram session restart by character name.
+target for an evi. Use `evictl channel telegram restart <agent>` for a
+Claude Code Channels Telegram session restart by AI agent name.
 
 `tail` reads recent tmux pane output for a configured target or evi.
 
@@ -64,13 +64,13 @@ evictl switch --character demo --engine claude-code-channels
 evictl switch --character demo --engine claude-code-channels --deployment telegram
 ```
 
-Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to a character. The
-character keeps the same external presence and memory scope while `switch`
-changes the inner engine. Use `--deployment` only when the same character has
+Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an AI agent. The
+AI agent keeps the same external presence and memory scope while `switch`
+changes the inner engine. Use `--deployment` only when the same AI agent has
 multiple deployments for one engine.
 
 For Claude Code Channels, `processor launch-plan` renders the channel plugins
-from the character's active interfaces:
+from the AI agent's active interfaces:
 
 ```bash
 evictl switch --character demo --engine claude-code-channels

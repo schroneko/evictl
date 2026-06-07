@@ -2,15 +2,15 @@
 
 Japanese: [README.ja.md](README.ja.md)
 
-`evictl` is a local control plane for always-on AI characters. A character keeps
-the same external presence, channels, and memory while its inner engine can be
+`evictl` is a local control tool for always-on AI agents. An AI agent keeps the
+same external presence, channels, and memory while its inner engine can be
 switched between independent agent sessions.
 
-Engines are the execution substrate that can host one or more deployments for a
-character. The initial engines are OpenClaw, Hermes Agent, and Claude Code
+Engines are the execution substrate that can host one or more deployments for an
+AI agent. The initial engines are OpenClaw, Hermes Agent, and Claude Code
 Channels.
 
-The intended shape is a replicated character control plane: create engine
+The intended shape is a replicated AI agent control tool: create engine
 deployments, route work to them, supervise their liveness, collect feedback and
 observations, then distribute distilled memory back to the deployments with
 provenance.
@@ -20,13 +20,14 @@ provenance.
 `evictl` currently targets macOS and requires Bun because the published CLI entry
 uses a Bun shebang.
 
-Install the published package:
+Install the published package. This is the normal installation path:
 
 ```bash
 bun install -g evictl
 ```
 
-Install the latest local checkout:
+For local development from this repository checkout, expose the checkout's bin
+directly:
 
 ```bash
 mkdir -p ~/.local/bin
@@ -34,13 +35,13 @@ ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/
 evictl --help
 ```
 
-Avoid repeated `bun install -g /path/to/evictl` for local checkout updates
-because Bun can duplicate global dependency entries for the same file path. Keep
-`~/.local/bin` on `PATH`.
+Do not use repeated `bun install -g /path/to/evictl` for local checkout updates.
+Bun can duplicate global dependency entries for the same file path. This does
+not affect the normal `bun install -g evictl` published-package install.
 
 ## Quick Start
 
-Replace `demo` with the character name you want to control.
+Replace `demo` with the AI agent name you want to control.
 
 ```bash
 evictl create demo
@@ -51,7 +52,7 @@ evictl switch --character demo --engine claude-code-channels
 evictl status
 ```
 
-The character name is the outside personality. The engine is the inside that
+The AI agent name is the outside identity. The engine is the inside runtime that
 answers for it.
 
 `migration` adopts existing Hermes Agent, OpenClaw, and Claude Code Channels
@@ -69,13 +70,13 @@ evictl switch --character demo --engine hermes-agent
 evictl status
 ```
 
-Send a task to the current engine behind the character:
+Send a task to the current engine behind the AI agent:
 
 ```bash
 evictl send demo --text "Run the check suite."
 ```
 
-Restart Claude Code Channels Telegram for a character:
+Restart Claude Code Channels Telegram for an AI agent:
 
 ```bash
 evictl channel telegram restart nukoevi

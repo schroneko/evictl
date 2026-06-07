@@ -2,14 +2,14 @@
 
 英語: [README.md](README.md)
 
-`evictl` は、常駐する AI キャラクターのためのローカル制御プレーンです。
-キャラクターは同じ外部プレゼンス、チャンネル、メモリを保ちながら、内側
-のエンジンを独立した agent session の間で切り替えられます。
+`evictl` は、常駐する AI エージェントのためのローカル制御ツールです。
+AI エージェントは同じ外部プレゼンス、チャンネル、メモリを保ちながら、
+内側のエンジンを独立した agent session の間で切り替えられます。
 
-エンジンは、1 つ以上の deployment をキャラクターに提供できる実行基盤で
+エンジンは、1 つ以上の deployment を AI エージェントに提供できる実行基盤で
 す。初期エンジンは OpenClaw、Hermes Agent、Claude Code Channels です。
 
-目指している形は、複製されたキャラクター制御プレーンです。engine
+目指している形は、複製された AI エージェント制御ツールです。engine
 deployment を作成し、作業を route し、生存状態を監視し、feedback と観測
 を集め、それを provenance 付きで蒸留した memory として deployment に配布
 します。
@@ -19,13 +19,14 @@ deployment を作成し、作業を route し、生存状態を監視し、feedb
 `evictl` は現在 macOS を対象にしており、公開 CLI entry が Bun shebang を
 使うため Bun が必要です。
 
-公開パッケージをインストールします:
+公開パッケージをインストールします。これが通常のインストール方法です:
 
 ```bash
 bun install -g evictl
 ```
 
-最新の local checkout をインストールします:
+この repository checkout からローカル開発する場合は、checkout の bin を
+直接公開します:
 
 ```bash
 mkdir -p ~/.local/bin
@@ -33,13 +34,14 @@ ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/
 evictl --help
 ```
 
-local checkout の更新に `bun install -g /path/to/evictl` を繰り返すのは避け
-てください。Bun が同じ file path の global dependency entry を重複させる
-ことがあります。`~/.local/bin` を `PATH` に入れておいてください。
+local checkout の更新に `bun install -g /path/to/evictl` を繰り返さないでく
+ださい。Bun が同じ file path の global dependency entry を重複させること
+があります。これは通常の `bun install -g evictl` による公開パッケージの
+インストールには影響しません。
 
 ## クイックスタート
 
-`demo` は制御したいキャラクター名に置き換えてください。
+`demo` は制御したい AI エージェント名に置き換えてください。
 
 ```bash
 evictl create demo
@@ -50,8 +52,8 @@ evictl switch --character demo --engine claude-code-channels
 evictl status
 ```
 
-キャラクター名は外側の人格です。エンジンはその人格として応答する内側で
-す。
+AI エージェント名は外側の identity です。エンジンはその identity として
+応答する内側の runtime です。
 
 `migration` は既存の Hermes Agent、OpenClaw、Claude Code Channels instance
 を `~/.config/evictl/config.json` に採用します。provider-native な file、
@@ -68,13 +70,13 @@ evictl switch --character demo --engine hermes-agent
 evictl status
 ```
 
-キャラクターの背後にある現在のエンジンへ task を送ります:
+AI エージェントの背後にある現在のエンジンへ task を送ります:
 
 ```bash
 evictl send demo --text "Run the check suite."
 ```
 
-キャラクターの Claude Code Channels Telegram を再起動します:
+AI エージェントの Claude Code Channels Telegram を再起動します:
 
 ```bash
 evictl channel telegram restart nukoevi
