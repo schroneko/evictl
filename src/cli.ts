@@ -244,7 +244,6 @@ const VALUE_OPTIONS = new Set([
   "--agent",
   "--agent-id",
   "--channel",
-  "--character",
   "--config",
   "--confidence",
   "--description",
@@ -3481,7 +3480,7 @@ function cmdSwitchCharacter(args: string[]): number {
     throw new Error("switch requires --agent <agent> and --engine <engine>");
   }
   const characterId = required(
-    optionValue(args, "--agent") ?? optionValue(args, "--character"),
+    optionValue(args, "--agent"),
     "switch requires --agent <agent>",
   );
   const engine = required(optionValue(args, "--engine"), "switch requires --engine <engine>");
@@ -3560,7 +3559,7 @@ function cmdProcessorList(args: string[] = []): number {
 
 function cmdEngineList(args: string[] = []): number {
   const characterId = required(
-    optionValue(args, "--agent") ?? optionValue(args, "--character"),
+    optionValue(args, "--agent"),
     "engine list requires --agent <agent>",
   );
   return cmdProcessorList([characterId, ...args]);
@@ -4452,10 +4451,8 @@ Common commands:
       Create an AI agent record.
   switch --agent <agent> --engine <engine> [--deployment <name>]
       Change which engine answers for an AI agent.
-      --character is accepted as a compatibility alias for --agent.
   engine list --agent <agent> [--json]
       Show engines that can answer for an AI agent.
-      --character is accepted as a compatibility alias for --agent.
   status [engine]
       Show running engine status.
   send <agent> --text <text> [--queue-only]

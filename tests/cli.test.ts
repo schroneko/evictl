@@ -176,7 +176,7 @@ describe("help", () => {
     const output = logs.join("\n");
     expect(output).toContain("switch --agent <agent>");
     expect(output).toContain("engine list --agent <agent>");
-    expect(output).toContain("--character is accepted as a compatibility alias");
+    expect(output).not.toContain("--character");
     expect(output).toContain("channel telegram restart <agent>");
     expect(output).toContain("evi restart <evi>");
     expect(output).toContain("restart <target>");
@@ -617,8 +617,8 @@ describe("identity routing", () => {
         }),
       );
       expect(main(["engine", "list", "--agent", "demo", "--json", "--config", config])).toBe(0);
-      expect(main(["engine", "list", "--character", "demo", "--json", "--config", config])).toBe(
-        0,
+      expect(() => main(["engine", "list", "--character", "demo", "--json", "--config", config])).toThrow(
+        "engine list requires --agent",
       );
       expect(() => main(["engine", "list", "--config", config])).toThrow(
         "engine list requires --agent",
