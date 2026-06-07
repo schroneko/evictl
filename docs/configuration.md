@@ -47,9 +47,9 @@ evictl create demo
 evictl interface bind telegram:main demo --kind telegram --address main
 evictl interface bind discord:main demo --kind discord --address main
 evictl interface bind mqtt:demo/inbox demo --kind mqtt --address demo/inbox
-evictl engine list --character demo
-evictl engine list --character demo --json
-evictl switch --character demo --engine hermes-agent
+evictl engine list --agent demo
+evictl engine list --agent demo --json
+evictl switch --agent demo --engine hermes-agent
 evictl send demo --text "Run from the active processor."
 ```
 

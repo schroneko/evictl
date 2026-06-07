@@ -3478,9 +3478,12 @@ function cmdIdentitySwitch(args: string[], label: "active" | "processor"): numbe
 
 function cmdSwitchCharacter(args: string[]): number {
   if (args[0] && !args[0].startsWith("--")) {
-    throw new Error("switch requires --character <agent> and --engine <engine>");
+    throw new Error("switch requires --agent <agent> and --engine <engine>");
   }
-  const characterId = required(optionValue(args, "--character"), "switch requires --character <agent>");
+  const characterId = required(
+    optionValue(args, "--agent") ?? optionValue(args, "--character"),
+    "switch requires --agent <agent>",
+  );
   const engine = required(optionValue(args, "--engine"), "switch requires --engine <engine>");
   const deployment = optionValue(args, "--deployment") ?? "";
   const path = optionValue(args, "--config") ?? configPath();
@@ -3556,7 +3559,10 @@ function cmdProcessorList(args: string[] = []): number {
 }
 
 function cmdEngineList(args: string[] = []): number {
-  const characterId = required(optionValue(args, "--character"), "engine list requires --character <agent>");
+  const characterId = required(
+    optionValue(args, "--agent") ?? optionValue(args, "--character"),
+    "engine list requires --agent <agent>",
+  );
   return cmdProcessorList([characterId, ...args]);
 }
 
@@ -4444,10 +4450,12 @@ Global options:
 Common commands:
   create <agent> [--memory-scope <scope>] [--description <text>] [--force]
       Create an AI agent record.
-  switch --character <agent> --engine <engine> [--deployment <name>]
+  switch --agent <agent> --engine <engine> [--deployment <name>]
       Change which engine answers for an AI agent.
-  engine list --character <agent> [--json]
+      --character is accepted as a compatibility alias for --agent.
+  engine list --agent <agent> [--json]
       Show engines that can answer for an AI agent.
+      --character is accepted as a compatibility alias for --agent.
   status [engine]
       Show running engine status.
   send <agent> --text <text> [--queue-only]

@@ -47,8 +47,8 @@ Replace `demo` with the AI agent name you want to control.
 evictl create demo
 evictl migration --dry-run
 evictl migration
-evictl engine list --character demo
-evictl switch --character demo --engine claude-code-channels
+evictl engine list --agent demo
+evictl switch --agent demo --engine claude-code-channels
 evictl status
 ```
 
@@ -64,9 +64,9 @@ move provider-native files, credentials, sessions, logs, or memory stores.
 After setup, most users only need these commands:
 
 ```bash
-evictl engine list --character demo
-evictl switch --character demo --engine claude-code-channels
-evictl switch --character demo --engine hermes-agent
+evictl engine list --agent demo
+evictl switch --agent demo --engine claude-code-channels
+evictl switch --agent demo --engine hermes-agent
 evictl status
 ```
 

@@ -57,11 +57,11 @@ Claude Code Channels Telegram session restart by AI agent name.
 ## Engine Handoff
 
 ```bash
-evictl engine list --character demo
-evictl switch --character demo --engine hermes-agent
-evictl switch --character demo --engine openclaw
-evictl switch --character demo --engine claude-code-channels
-evictl switch --character demo --engine claude-code-channels --deployment telegram
+evictl engine list --agent demo
+evictl switch --agent demo --engine hermes-agent
+evictl switch --agent demo --engine openclaw
+evictl switch --agent demo --engine claude-code-channels
+evictl switch --agent demo --engine claude-code-channels --deployment telegram
 ```
 
 Interfaces such as Telegram, MQTT, CLI, LINE, or Web bind to an AI agent. The
@@ -73,7 +73,7 @@ For Claude Code Channels, `processor launch-plan` renders the channel plugins
 from the AI agent's active interfaces:
 
 ```bash
-evictl switch --character demo --engine claude-code-channels
+evictl switch --agent demo --engine claude-code-channels
 evictl processor launch-plan demo
 evictl processor launch-plan demo --json
 ```

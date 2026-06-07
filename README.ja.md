@@ -6,13 +6,11 @@
 AI エージェントは同じ外部プレゼンス、チャンネル、メモリを保ちながら、
 内側のエンジンを独立した agent session の間で切り替えられます。
 
-エンジンは、1 つ以上の deployment を AI エージェントに提供できる実行基盤で
-す。初期エンジンは OpenClaw、Hermes Agent、Claude Code Channels です。
+エンジンは、1 つ以上の deployment を AI エージェントに提供できる実行基盤です。
+初期エンジンは OpenClaw、Hermes Agent、Claude Code Channels です。
 
-目指している形は、複製された AI エージェント制御ツールです。engine
-deployment を作成し、作業を route し、生存状態を監視し、feedback と観測
-を集め、それを provenance 付きで蒸留した memory として deployment に配布
-します。
+目指している形は、複製された AI エージェント制御ツールです。
+engine deployment を作成し、作業を route し、生存状態を監視し、feedback と観測を集め、それを provenance 付きで蒸留した memory として deployment に配布します。
 
 ## インストール
 
@@ -34,10 +32,9 @@ ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/
 evictl --help
 ```
 
-local checkout の更新に `bun install -g /path/to/evictl` を繰り返さないでく
-ださい。Bun が同じ file path の global dependency entry を重複させること
-があります。これは通常の `bun install -g evictl` による公開パッケージの
-インストールには影響しません。
+local checkout の更新に `bun install -g /path/to/evictl` を繰り返さないでください。
+Bun が同じ file path の global dependency entry を重複させることがあります。
+これは通常の `bun install -g evictl` による公開パッケージのインストールには影響しません。
 
 ## クイックスタート
 
@@ -47,8 +44,8 @@ local checkout の更新に `bun install -g /path/to/evictl` を繰り返さな�
 evictl create demo
 evictl migration --dry-run
 evictl migration
-evictl engine list --character demo
-evictl switch --character demo --engine claude-code-channels
+evictl engine list --agent demo
+evictl switch --agent demo --engine claude-code-channels
 evictl status
 ```
 
@@ -64,9 +61,9 @@ credential、session、log、memory store を変換、削除、移動しませ�
 セットアップ後、ほとんどのユーザーが使うのは次のコマンドだけです:
 
 ```bash
-evictl engine list --character demo
-evictl switch --character demo --engine claude-code-channels
-evictl switch --character demo --engine hermes-agent
+evictl engine list --agent demo
+evictl switch --agent demo --engine claude-code-channels
+evictl switch --agent demo --engine hermes-agent
 evictl status
 ```
 
@@ -125,12 +122,11 @@ evictl channel telegram setup nukoevi \
   --plist-path ~/Library/LaunchAgents/com.local.claude-telegram-channel.plist
 ```
 
-生成される `start.sh` は launchd watchdog です。tmux session がすでに存在す
-る場合、通常はそのままにします。ただし、live process がある stale channel
-polling session を避けるため、`CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS` 秒
-後に Claude Code Channels を再起動します。既定値は `21600` 秒です。
-時間による再起動を無効にするには、`--env
-CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS=0` で `0` に設定します。
+生成される `start.sh` は launchd watchdog です。
+tmux session がすでに存在する場合、通常はそのままにします。
+ただし、live process がある stale channel polling session を避けるため、`CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS` 秒後に Claude Code Channels を再起動します。
+既定値は `21600` 秒です。
+時間による再起動を無効にするには、`--env CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS=0` で `0` に設定します。
 
 ## ドキュメント
 

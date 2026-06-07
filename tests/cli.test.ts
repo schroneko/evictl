@@ -174,6 +174,9 @@ describe("help", () => {
       log.mockRestore();
     }
     const output = logs.join("\n");
+    expect(output).toContain("switch --agent <agent>");
+    expect(output).toContain("engine list --agent <agent>");
+    expect(output).toContain("--character is accepted as a compatibility alias");
     expect(output).toContain("channel telegram restart <agent>");
     expect(output).toContain("evi restart <evi>");
     expect(output).toContain("restart <target>");
@@ -588,7 +591,7 @@ describe("identity routing", () => {
       "evi-claude-code-channels-demo",
     );
     expect(() => main(["switch", "demo", "--engine", "claude-code-channels"])).toThrow(
-      "switch requires --character",
+      "switch requires --agent",
     );
   });
 
@@ -613,9 +616,12 @@ describe("identity routing", () => {
           },
         }),
       );
-      expect(main(["engine", "list", "--character", "demo", "--json", "--config", config])).toBe(0);
+      expect(main(["engine", "list", "--agent", "demo", "--json", "--config", config])).toBe(0);
+      expect(main(["engine", "list", "--character", "demo", "--json", "--config", config])).toBe(
+        0,
+      );
       expect(() => main(["engine", "list", "--config", config])).toThrow(
-        "engine list requires --character",
+        "engine list requires --agent",
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
