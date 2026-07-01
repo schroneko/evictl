@@ -173,7 +173,7 @@ describe("help", () => {
     expect(output).toContain("engine list --agent <agent>");
     expect(output).toContain("channel telegram restart <agent>");
     expect(output).toContain("evi restart <evi>");
-    expect(output).toContain("restart <target>");
+    expect(output).toContain("restart <target-or-agent>");
   });
 });
 
@@ -1624,6 +1624,31 @@ describe("tmux send", () => {
       const [event] = readMemoryEvents(eventLog);
       expect(event.target_evi).toBe("evi-hermes-agent-grok");
       expect(event.subject).toBe("demo");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("restart", () => {
+  test("restart resolves an identity before falling back to targets", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-restart-identity-test-"));
+    try {
+      const config = join(root, "config.json");
+      writeFileSync(
+        config,
+        JSON.stringify({
+          identities: {
+            demo: {
+              active_evi: "",
+            },
+          },
+        }),
+      );
+      expect(() => main(["restart", "demo", "--config", config])).toThrow(
+        "identity has no active evi: demo",
+      );
+      expect(() => main(["restart", "missing", "--config", config])).toThrow("unknown target");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

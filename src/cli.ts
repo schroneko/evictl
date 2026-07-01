@@ -4640,8 +4640,20 @@ function cmdStop(args: string[]): number {
 }
 
 function cmdRestart(args: string[]): number {
-  const targets = loadTargets();
-  const key = resolveTarget(required(args[0], "restart requires a target"), targets);
+  const subject = required(args[0], "restart requires a target or agent");
+  const path = optionValue(args, "--config") ?? configPath();
+  const inventory = loadInventory(loadConfigData(path));
+  const identity = inventory.identities[subject];
+  if (identity) {
+    const evi = inventory.evis[identity.activeEvi];
+    if (!evi) throw new Error(`identity has no active evi: ${subject}`);
+    if (evi.provider === "claude-code-channels") {
+      return cmdChannelTelegramRestart([subject, "--config", path]);
+    }
+    return cmdEviRestart([evi.eviId, "--config", path]);
+  }
+  const key = resolveTarget(subject, inventory.targets);
+  const targets = inventory.targets;
   stopTarget(targets[key]);
   bootstrap(targets[key]);
   printStatuses([statusFor(targets[key])]);
@@ -4828,7 +4840,7 @@ Advanced commands:
   processor launch-plan <identity> [--json]
   start <target>
   stop <target>
-  restart <target>
+  restart <target-or-agent>
   stop-all
   use <target>
   monitor [--once] [--interval <seconds>]

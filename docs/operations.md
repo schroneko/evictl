@@ -48,6 +48,7 @@ evictl doctor
 evictl start claude-code-channels
 evictl stop claude-code-channels
 evictl restart claude-code-channels
+evictl restart demo
 evictl evi start evi-claude-code-channels-demo
 evictl evi stop evi-claude-code-channels-demo
 evictl evi restart evi-claude-code-channels-demo
@@ -59,6 +60,10 @@ evictl tail evi-claude-code-channels-demo --lines 120
 `evi start`, `evi stop`, and `evi restart` operate the configured provider
 target for an evi. Use `evictl channel telegram restart <agent>` for a
 Claude Code Channels Telegram session restart by AI agent name.
+
+`restart` also accepts an AI agent name. It resolves the agent's active evi and
+restarts it, using the Claude Code Channels Telegram restart path when the
+active engine is Claude Code Channels.
 
 `tail` reads recent tmux pane output for a configured target or evi.
 
