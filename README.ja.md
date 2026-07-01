@@ -79,6 +79,30 @@ AI エージェントの Claude Code Channels Telegram を再起動します:
 evictl channel telegram restart nukoevi
 ```
 
+## OpenClaw
+
+OpenClaw setup は、`openclaw` binary を手動で link せずに `evictl` から実行できます:
+
+```bash
+evictl openclaw setup
+```
+
+この command は OpenClaw CLI を install または `~/.local/bin/openclaw` に expose し、
+baseline workspace を作成し、default model を `openai/gpt-5.5` に設定し、
+OpenClaw の OpenAI auth order を Codex CLI profile `openai:default` に同期し、
+Gateway launch agent を起動し、OpenClaw を `evi-openclaw` engine candidate として採用します。
+Telegram や StackChan route は作成しないため、AI エージェントを OpenClaw へ switch するまで、
+既存の Claude Code Channels route が ownership を保ちます。
+
+Codex auth sync は default で有効です。skip する場合は `--no-sync-codex-auth`、
+別の OpenClaw auth profile を使う場合は `--auth-profile <id>` を指定します。
+
+変更せずに setup 内容を確認します:
+
+```bash
+evictl openclaw setup --dry-run --json
+```
+
 汎用的な runtime control も利用できます:
 
 ```bash

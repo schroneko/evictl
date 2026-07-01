@@ -7,13 +7,17 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
+  readlinkSync,
   readFileSync,
   readSync,
   renameSync,
+  rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -280,7 +284,10 @@ const VALUE_OPTIONS = new Set([
   "--model",
   "--model-provider",
   "--base-url",
+  "--bin-dir",
   "--env",
+  "--auth-profile",
+  "--auth-provider",
   "--source",
   "--state-dir",
   "--subject",
@@ -291,7 +298,13 @@ const VALUE_OPTIONS = new Set([
   "--tmux",
   "--verdict",
   "--workspace",
+  "--openclaw-bin",
+  "--prefix",
 ]);
+
+export const DEFAULT_OPENCLAW_MODEL = "openai/gpt-5.5";
+export const DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE = "openai:default";
+const OPENCLAW_INSTALL_SCRIPT_URL = "https://openclaw.ai/install-cli.sh";
 
 export const DEFAULT_TARGETS: Record<string, Target> = {
   openclaw: {
@@ -559,6 +572,9 @@ export function loadInventory(data = loadConfigData()): Inventory {
       ? resolveProvider(rawProvider)
       : providerForRuntime(rawRuntime, targets);
     const runtime = normalizeRuntimeName(rawRuntime || runtimeForProvider(provider), targets);
+    const modelProvider = stringValue(
+      raw.model_provider ?? raw.modelProvider ?? raw.inference_provider,
+    );
     if (!runtime) throw new Error(`evi missing runtime: ${eviId}`);
     evis[eviId] = {
       eviId,
@@ -572,9 +588,8 @@ export function loadInventory(data = loadConfigData()): Inventory {
       networkId: stringValue(raw.network_id ?? raw.networkId, "default"),
       replicaOf: stringValue(raw.replica_of ?? raw.replicaOf),
       role: stringValue(raw.role, "replica"),
-      modelProvider: normalizeHermesModelProvider(
-        stringValue(raw.model_provider ?? raw.modelProvider ?? raw.inference_provider),
-      ),
+      modelProvider:
+        provider === "hermes-agent" ? normalizeHermesModelProvider(modelProvider) : modelProvider,
       model: stringValue(raw.model ?? raw.inference_model),
       baseUrl: stringValue(raw.base_url ?? raw.baseUrl),
       env: stringMap(raw.env),
@@ -2440,6 +2455,183 @@ function concretePath(value: string): string {
   return expandPath(value) ?? value;
 }
 
+export type OpenClawSetupPlanOptions = {
+  home?: string;
+  prefix?: string;
+  binDir?: string;
+  openclawBin?: string;
+  workspace?: string;
+  model?: string;
+  authProvider?: string;
+  authProfileId?: string;
+  agentId?: string;
+  eviId?: string;
+  profile?: string;
+  installCli?: boolean;
+  syncCodexAuth?: boolean;
+  installGateway?: boolean;
+  exposeCli?: boolean;
+  adopt?: boolean;
+};
+
+export type OpenClawSetupPlan = {
+  prefix: string;
+  openclawBin: string;
+  exposedBin: string;
+  workspace: string;
+  model: string;
+  authProvider: string;
+  authProfileId: string;
+  installCli: boolean;
+  syncCodexAuth: boolean;
+  installGateway: boolean;
+  exposeCli: boolean;
+  adopt: boolean;
+  installCommand: string[];
+  setupCommand: string[];
+  authCommand: string[];
+  modelCommand: string[];
+  gatewayInstallCommand: string[];
+  gatewayStatusCommand: string[];
+  target: Target;
+  evi: Evi;
+};
+
+function openClawInstallCommand(prefix: string): string[] {
+  return [
+    "bash",
+    "-lc",
+    `curl -fsSL --proto '=https' --tlsv1.2 ${shellQuote(OPENCLAW_INSTALL_SCRIPT_URL)} | bash -s -- --no-onboard --prefix ${shellQuote(prefix)}`,
+  ];
+}
+
+export function openClawSetupPlan(options: OpenClawSetupPlanOptions = {}): OpenClawSetupPlan {
+  const home = options.home ?? homedir();
+  const prefix = concretePath(options.prefix ?? join(home, ".openclaw"));
+  const openclawBin = concretePath(options.openclawBin ?? join(prefix, "bin", "openclaw"));
+  const binDir = concretePath(options.binDir ?? join(home, ".local", "bin"));
+  const exposedBin = join(binDir, "openclaw");
+  const workspace = concretePath(options.workspace ?? join(prefix, "workspace"));
+  const model = options.model ?? DEFAULT_OPENCLAW_MODEL;
+  const authProvider = options.authProvider ?? "codex";
+  const authProfileId = options.authProfileId ?? DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE;
+  const modelProvider = model.includes("/") ? model.split("/", 1)[0] : authProvider;
+  const agentId = options.agentId ?? "main";
+  const profile = options.profile ?? "default";
+  const eviId = options.eviId ?? "evi-openclaw";
+  const target: Target = {
+    ...DEFAULT_TARGETS.openclaw,
+    plist: join(home, "Library", "LaunchAgents", "ai.openclaw.gateway.plist"),
+  };
+  const evi: Evi = {
+    eviId,
+    runtime: "openclaw",
+    provider: "openclaw",
+    profile,
+    agentId,
+    sessionId: "",
+    workspace,
+    stateDir: prefix,
+    networkId: "default",
+    replicaOf: "",
+    role: "replica",
+    modelProvider,
+    model,
+    baseUrl: "",
+    env: {},
+  };
+  return {
+    prefix,
+    openclawBin,
+    exposedBin,
+    workspace,
+    model,
+    authProvider,
+    authProfileId,
+    installCli: options.installCli ?? true,
+    syncCodexAuth: options.syncCodexAuth ?? authProvider === "codex",
+    installGateway: options.installGateway ?? true,
+    exposeCli: options.exposeCli ?? true,
+    adopt: options.adopt ?? true,
+    installCommand: openClawInstallCommand(prefix),
+    setupCommand: [
+      openclawBin,
+      "setup",
+      "--non-interactive",
+      "--accept-risk",
+      "--workspace",
+      workspace,
+    ],
+    authCommand:
+      authProvider === "codex"
+        ? [
+            openclawBin,
+            "models",
+            "auth",
+            "order",
+            "set",
+            "--provider",
+            "openai",
+            "--agent",
+            agentId,
+            authProfileId,
+          ]
+        : [],
+    modelCommand: model ? [openclawBin, "models", "set", model] : [],
+    gatewayInstallCommand: [openclawBin, "gateway", "install", "--force"],
+    gatewayStatusCommand: [openclawBin, "gateway", "status", "--probe", "--json"],
+    target,
+    evi,
+  };
+}
+
+function commandDisplay(command: string[]): string {
+  return command.map(shellQuote).join(" ");
+}
+
+function runRequired(command: string[], label: string): RunResult {
+  const result = run(command);
+  if (result.code !== 0) {
+    const detail = (result.stderr || result.stdout).trim();
+    throw new Error(`${label} failed: ${detail || commandDisplay(command)}`);
+  }
+  return result;
+}
+
+function runOpenClawSetupCommand(command: string[]): RunResult {
+  const result = run(command);
+  if (result.code === 0) return result;
+  const detail = `${result.stdout}\n${result.stderr}`;
+  if (detail.includes("Gateway did not become reachable")) return result;
+  throw new Error(`openclaw setup failed: ${(result.stderr || result.stdout).trim()}`);
+}
+
+function exposeOpenClawCli(plan: OpenClawSetupPlan, force: boolean): string {
+  if (!existsSync(plan.openclawBin)) {
+    throw new Error(`OpenClaw CLI not found: ${plan.openclawBin}`);
+  }
+  mkdirSync(dirname(plan.exposedBin), { recursive: true });
+  if (existsSync(plan.exposedBin)) {
+    const current = lstatSync(plan.exposedBin);
+    if (current.isSymbolicLink() && readlinkSync(plan.exposedBin) === plan.openclawBin) {
+      return "already-linked";
+    }
+    if (!force) {
+      throw new Error(`refusing to replace existing file: ${plan.exposedBin} (pass --force)`);
+    }
+    rmSync(plan.exposedBin);
+  }
+  symlinkSync(plan.openclawBin, plan.exposedBin);
+  return "linked";
+}
+
+export function applyOpenClawSetupConfig(
+  data: Record<string, unknown>,
+  plan: OpenClawSetupPlan,
+): Record<string, unknown> {
+  return spawnEviConfig(setTargetConfig(data, plan.target, true), plan.evi, true);
+}
+
 function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
 }
@@ -4301,6 +4493,111 @@ function cmdTargetAdd(args: string[]): number {
   return 0;
 }
 
+function cmdOpenClawSetup(args: string[]): number {
+  const path = optionValue(args, "--config") ?? configPath();
+  const plan = openClawSetupPlan({
+    prefix: optionValue(args, "--prefix"),
+    binDir: optionValue(args, "--bin-dir"),
+    openclawBin: optionValue(args, "--openclaw-bin"),
+    workspace: optionValue(args, "--workspace"),
+    model: optionValue(args, "--model") ?? DEFAULT_OPENCLAW_MODEL,
+    authProvider: optionValue(args, "--auth-provider") ?? "codex",
+    authProfileId: optionValue(args, "--auth-profile") ?? DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE,
+    agentId: optionValue(args, "--agent") ?? optionValue(args, "--agent-id") ?? "main",
+    eviId: optionValue(args, "--id") ?? "evi-openclaw",
+    profile: optionValue(args, "--profile") ?? "default",
+    installCli: !hasFlag(args, "--no-install-cli"),
+    syncCodexAuth: hasFlag(args, "--no-sync-codex-auth")
+      ? false
+      : hasFlag(args, "--sync-codex-auth") || undefined,
+    installGateway: !hasFlag(args, "--no-gateway"),
+    exposeCli: !hasFlag(args, "--no-expose"),
+    adopt: !hasFlag(args, "--no-adopt"),
+  });
+  const asJson = hasFlag(args, "--json");
+  const dryRun = hasFlag(args, "--dry-run");
+  if (dryRun) {
+    const payload = {
+      openclaw: {
+        prefix: plan.prefix,
+        bin: plan.openclawBin,
+        exposedBin: plan.exposedBin,
+        workspace: plan.workspace,
+        model: plan.model,
+        authProvider: plan.authProvider,
+        authProfileId: plan.authProfileId,
+      },
+      steps: {
+        installCli: plan.installCli,
+        exposeCli: plan.exposeCli,
+        syncCodexAuth: plan.syncCodexAuth,
+        installGateway: plan.installGateway,
+        adopt: plan.adopt,
+      },
+      commands: {
+        install: plan.installCommand,
+        setup: plan.setupCommand,
+        auth: plan.authCommand,
+        model: plan.modelCommand,
+        gatewayInstall: plan.gatewayInstallCommand,
+        gatewayStatus: plan.gatewayStatusCommand,
+      },
+      evictl: {
+        config: path,
+        target: plan.target,
+        evi: plan.evi,
+      },
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    else {
+      console.log(`openclaw_bin=${displayPath(plan.openclawBin)}`);
+      console.log(`exposed_bin=${displayPath(plan.exposedBin)}`);
+      console.log(`workspace=${displayPath(plan.workspace)}`);
+      console.log(`model=${plan.model}`);
+      console.log(`auth_provider=${plan.authProvider}`);
+      console.log(`auth_profile=${plan.authProfileId}`);
+      console.log(`evi=${plan.evi.eviId}`);
+    }
+    return 0;
+  }
+
+  const results: Record<string, string> = {};
+  if (plan.installCli && !existsSync(plan.openclawBin)) {
+    runRequired(plan.installCommand, "OpenClaw CLI install");
+    results.install = "installed";
+  } else {
+    results.install = existsSync(plan.openclawBin) ? "already-present" : "skipped";
+  }
+  if (plan.exposeCli) results.expose = exposeOpenClawCli(plan, hasFlag(args, "--force"));
+  runOpenClawSetupCommand(plan.setupCommand);
+  results.setup = "ok";
+  if (plan.syncCodexAuth && plan.authCommand.length > 0) {
+    runRequired(plan.authCommand, "OpenClaw Codex auth sync");
+    results.auth = "ok";
+  }
+  if (plan.modelCommand.length > 0) {
+    runRequired(plan.modelCommand, "OpenClaw model setup");
+    results.model = plan.model;
+  }
+  if (plan.installGateway) {
+    runRequired(plan.gatewayInstallCommand, "OpenClaw gateway install");
+    runRequired(plan.gatewayStatusCommand, "OpenClaw gateway status");
+    results.gateway = "running";
+  }
+  if (plan.adopt) {
+    writeConfigData(path, applyOpenClawSetupConfig(loadConfigData(path), plan));
+    results.adopt = plan.evi.eviId;
+  }
+  if (asJson) {
+    console.log(JSON.stringify({ ok: true, results, evi: plan.evi, config: path }, null, 2));
+  } else {
+    console.log(
+      `openclaw=${results.install} expose=${results.expose ?? "skipped"} auth=${results.auth ?? "skipped"} model=${results.model ?? "-"} gateway=${results.gateway ?? "skipped"} evi=${results.adopt ?? "skipped"}`,
+    );
+  }
+  return 0;
+}
+
 function tailSessionsFor(subject: string, inventory: Inventory): string[] {
   const evi = inventory.evis[subject];
   if (evi) {
@@ -4502,6 +4799,8 @@ Setup commands:
       Pair a Telegram sender by sending the pairing code to the running Claude session.
   channel telegram allowlist <agent>
       Restrict Telegram access to paired senders.
+  openclaw setup [--model <model>] [--auth-profile <id>] [--prefix <path>] [--bin-dir <path>] [--no-sync-codex-auth] [--dry-run]
+      Install/expose OpenClaw, configure Codex-backed model defaults, start Gateway, and adopt it.
 
 Advanced commands:
   ps
@@ -4602,6 +4901,7 @@ export function main(argv = process.argv.slice(2)): number {
     return cmdChannelTelegramPair(args.slice(2));
   if (command === "channel" && args[0] === "telegram" && args[1] === "allowlist")
     return cmdChannelTelegramAllowlist(args.slice(2));
+  if (command === "openclaw" && args[0] === "setup") return cmdOpenClawSetup(args.slice(1));
   if (command === "route" && args[0] === "list") return cmdRouteList();
   if (command === "route" && args[0] === "set") return cmdRouteSet(args.slice(1));
   if (command === "target" && args[0] === "add") return cmdTargetAdd(args.slice(1));

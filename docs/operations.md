@@ -23,7 +23,15 @@ evictl import --dry-run
 evictl import
 evictl interface bind
 evictl channel telegram setup
+evictl openclaw setup --dry-run
+evictl openclaw setup
 ```
+
+`openclaw setup` installs or exposes the OpenClaw CLI, creates the baseline
+workspace, sets the default model, syncs OpenClaw's OpenAI auth order to the
+Codex CLI profile, starts the Gateway launch agent, and adopts the result as
+the `evi-openclaw` engine candidate. It does not create Telegram or StackChan
+routes. See the README for the option list.
 
 When run from a terminal, `evictl migration` asks for confirmation before
 writing config. If two runtimes already own the same channel surface, it asks

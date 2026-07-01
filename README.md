@@ -82,6 +82,32 @@ Restart Claude Code Channels Telegram for an AI agent:
 evictl channel telegram restart nukoevi
 ```
 
+## OpenClaw
+
+OpenClaw setup can be driven from `evictl` without manually linking the
+`openclaw` binary:
+
+```bash
+evictl openclaw setup
+```
+
+The command installs or exposes the OpenClaw CLI at `~/.local/bin/openclaw`,
+creates the baseline OpenClaw workspace, sets the default model to
+`openai/gpt-5.5`, syncs OpenClaw's OpenAI auth order to the Codex CLI profile
+`openai:default`, starts the Gateway launch agent, and adopts OpenClaw as the
+`evi-openclaw` engine candidate. It does not create Telegram or StackChan
+routes, so existing Claude Code Channels routes keep ownership until you switch
+an AI agent to OpenClaw.
+
+Codex auth sync is enabled by default. Pass `--no-sync-codex-auth` to skip it,
+or `--auth-profile <id>` to choose another OpenClaw auth profile.
+
+Preview the setup without changing files:
+
+```bash
+evictl openclaw setup --dry-run --json
+```
+
 Generic runtime controls are also available:
 
 ```bash

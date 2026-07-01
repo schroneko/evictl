@@ -8,6 +8,9 @@ import {
   type Identity,
   type InterfaceBinding,
   type Route,
+  DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE,
+  DEFAULT_OPENCLAW_MODEL,
+  applyOpenClawSetupConfig,
   appendMemoryEvent,
   applyPrimaryRouteSelections,
   bindIdentityProcessorConfig,
@@ -35,6 +38,7 @@ import {
   loadInventory,
   main,
   mergeConfigData,
+  openClawSetupPlan,
   parseGlobalOptions,
   parseProcessPids,
   promoteMemoryEvents,
@@ -1882,6 +1886,82 @@ describe("discovery", () => {
       expect(discovery.sources.filter((source) => source.kind === "agent-workspace")).toHaveLength(
         2,
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("plans OpenClaw setup with Codex defaults and local CLI exposure", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-openclaw-setup-test-"));
+    try {
+      const plan = openClawSetupPlan({ home: root });
+      expect(plan.model).toBe(DEFAULT_OPENCLAW_MODEL);
+      expect(plan.authProvider).toBe("codex");
+      expect(plan.authProfileId).toBe(DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE);
+      expect(plan.openclawBin).toBe(join(root, ".openclaw", "bin", "openclaw"));
+      expect(plan.exposedBin).toBe(join(root, ".local", "bin", "openclaw"));
+      expect(plan.evi.eviId).toBe("evi-openclaw");
+      expect(plan.evi.provider).toBe("openclaw");
+      expect(plan.evi.modelProvider).toBe("openai");
+      expect(plan.evi.model).toBe("openai/gpt-5.5");
+      expect(plan.syncCodexAuth).toBe(true);
+      expect(plan.authCommand).toEqual([
+        plan.openclawBin,
+        "models",
+        "auth",
+        "order",
+        "set",
+        "--provider",
+        "openai",
+        "--agent",
+        "main",
+        DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("adopts OpenClaw setup without changing existing Claude Code Channels routes", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-openclaw-adopt-test-"));
+    try {
+      const plan = openClawSetupPlan({ home: root });
+      const existing = {
+        routes: {
+          "telegram:claude-code-channels:nukoevi": {
+            channel: "telegram",
+            account_id: "default",
+            target_evi: "evi-claude-code-channels-nukoevi",
+            mode: "primary",
+          },
+        },
+        evis: {
+          "evi-claude-code-channels-nukoevi": {
+            runtime: "claude-code-channels",
+            provider: "claude-code-channels",
+            profile: "nukoevi",
+            agent_id: "nukoevi-telegram",
+            session_id: "claude-code-channels-nukoevi",
+            workspace: root,
+            state_dir: join(root, "channels"),
+            network_id: "default",
+            replica_of: "",
+            role: "replica",
+            model_provider: "",
+            model: "claude-opus-4-8",
+            base_url: "",
+            env: {},
+          },
+        },
+      };
+      const next = applyOpenClawSetupConfig(existing, plan);
+      const inventory = loadInventory(next);
+      expect((next.evis as Record<string, unknown>)["evi-openclaw"]).toBeTruthy();
+      expect(inventory.evis["evi-openclaw"].modelProvider).toBe("openai");
+      expect(Object.keys(next.routes as Record<string, unknown>)).toEqual([
+        "telegram:claude-code-channels:nukoevi",
+      ]);
+      expect((next.targets as Record<string, unknown>).openclaw).toBeTruthy();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
