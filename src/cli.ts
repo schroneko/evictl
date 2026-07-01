@@ -318,10 +318,7 @@ export const DEFAULT_TARGETS: Record<string, Target> = {
     label: "com.local.claude-code-channels",
     plist: "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
     tmuxSessions: ["claude-code-channels"],
-    processPatterns: [
-      "claude.*plugin:(telegram|discord)",
-      "claude-code-channels",
-    ],
+    processPatterns: ["claude.*plugin:(telegram|discord)", "claude-code-channels"],
     healthPatterns: ["Listening for channel messages from:"],
     healthProcessPatterns: ["claude-plugins-official/(telegram|discord)"],
   },
@@ -558,7 +555,9 @@ export function loadInventory(data = loadConfigData()): Inventory {
     const rawRuntime = stringValue(raw.runtime);
     const rawProvider = stringValue(raw.provider);
     if (!rawRuntime && !rawProvider) throw new Error(`evi missing runtime/provider: ${eviId}`);
-    const provider = rawProvider ? resolveProvider(rawProvider) : providerForRuntime(rawRuntime, targets);
+    const provider = rawProvider
+      ? resolveProvider(rawProvider)
+      : providerForRuntime(rawRuntime, targets);
     const runtime = normalizeRuntimeName(rawRuntime || runtimeForProvider(provider), targets);
     if (!runtime) throw new Error(`evi missing runtime: ${eviId}`);
     evis[eviId] = {
@@ -590,7 +589,9 @@ export function loadInventory(data = loadConfigData()): Inventory {
     );
     if (activeEvi && !evis[activeEvi]) {
       const known = Object.keys(evis).sort().join(", ");
-      throw new Error(`identity ${identityId} has unknown active evi: ${activeEvi} (known: ${known})`);
+      throw new Error(
+        `identity ${identityId} has unknown active evi: ${activeEvi} (known: ${known})`,
+      );
     }
     identities[identityId] = {
       identityId,
@@ -605,7 +606,9 @@ export function loadInventory(data = loadConfigData()): Inventory {
   for (const [key, rawInterface] of Object.entries(configuredInterfaces)) {
     const raw = objectValue(rawInterface);
     const kind = stringValue(raw.kind) || key.split(":", 1)[0] || "";
-    const identityId = stringValue(raw.identity_id ?? raw.identityId ?? raw.target_identity ?? raw.targetIdentity);
+    const identityId = stringValue(
+      raw.identity_id ?? raw.identityId ?? raw.target_identity ?? raw.targetIdentity,
+    );
     if (!kind || !identityId) throw new Error(`interface missing kind or identity_id: ${key}`);
     if (!identities[identityId]) {
       const known = Object.keys(identities).sort().join(", ");
@@ -740,7 +743,9 @@ const CLAUDE_CODE_CHANNEL_MARKETPLACES: Record<string, string> = {
   telegram: "claude-plugins-official",
 };
 
-function claudeCodeChannelPluginForInterface(binding: InterfaceBinding): ClaudeCodeChannelPlugin | undefined {
+function claudeCodeChannelPluginForInterface(
+  binding: InterfaceBinding,
+): ClaudeCodeChannelPlugin | undefined {
   const plugin = binding.kind || binding.key.split(":", 1)[0] || "";
   const marketplace = CLAUDE_CODE_CHANNEL_MARKETPLACES[plugin];
   return marketplace ? { plugin, marketplace } : undefined;
@@ -810,10 +815,7 @@ export type ClaudeCodeChannelsLaunchAgentOptions = {
   stderrPath: string;
 };
 
-export type ClaudeCodeChannelsAuthType =
-  | "anthropic-api-key"
-  | "claude-code-oauth"
-  | "none";
+export type ClaudeCodeChannelsAuthType = "anthropic-api-key" | "claude-code-oauth" | "none";
 
 export type ClaudeCodeChannelsAuthStatus = {
   authType: ClaudeCodeChannelsAuthType;
@@ -1003,11 +1005,7 @@ export function claudeCodeChannelsAllowedTools(channel: ClaudeCodeChannelPlugin)
 export function claudeCodeChannelsAllowedToolsForChannels(
   channels: ClaudeCodeChannelPlugin[],
 ): string[] {
-  return [
-    ...new Set(
-      channels.flatMap((channel) => claudeCodeChannelsAllowedTools(channel)),
-    ),
-  ];
+  return [...new Set(channels.flatMap((channel) => claudeCodeChannelsAllowedTools(channel)))];
 }
 
 export function claudeCodeChannelsSystemPrompt(channel: ClaudeCodeChannelPlugin): string {
@@ -1033,8 +1031,7 @@ export function claudeCodeChannelsSystemPromptForChannels(
 ): string {
   const parts = [
     options.baseSystemPrompt?.trim() ?? "",
-    ...channels
-    .map((channel) => claudeCodeChannelsSystemPrompt(channel))
+    ...channels.map((channel) => claudeCodeChannelsSystemPrompt(channel)),
   ].filter((part) => part.trim().length > 0);
   if (channels.some((channel) => channel.plugin === "stackchan")) {
     parts.push(
@@ -1209,16 +1206,23 @@ export function claudeCodeChannelsTelegramConfig(
   env: Record<string, string> = {},
   force = false,
   model = "",
-  channels: ClaudeCodeChannelPlugin[] = [{ plugin: "telegram", marketplace: "claude-plugins-official" }],
+  channels: ClaudeCodeChannelPlugin[] = [
+    { plugin: "telegram", marketplace: "claude-plugins-official" },
+  ],
   targetOptions: { label?: string; plist?: string } = {},
 ): Record<string, unknown> {
-  const primaryChannel = channels[0] ?? { plugin: "telegram", marketplace: "claude-plugins-official" };
+  const primaryChannel = channels[0] ?? {
+    plugin: "telegram",
+    marketplace: "claude-plugins-official",
+  };
   const sessionName = `claude-code-channels-${slug(identityId)}`;
   const eviId = `evi-claude-code-channels-${slug(identityId)}`;
   const target: Target = {
     ...DEFAULT_TARGETS["claude-code-channels"],
     label: targetOptions.label ?? DEFAULT_TARGETS["claude-code-channels"].label,
-    plist: targetOptions.plist ?? join(homedir(), "Library", "LaunchAgents", "com.local.claude-code-channels.plist"),
+    plist:
+      targetOptions.plist ??
+      join(homedir(), "Library", "LaunchAgents", "com.local.claude-code-channels.plist"),
     tmuxSessions: [sessionName],
   };
   let next = setTargetConfig(data, target, force);
@@ -1282,7 +1286,10 @@ export function claudeCodeChannelsTelegramConfig(
   return next;
 }
 
-function profileFromClaudeCodeChannels(agentName: string, plugins: ClaudeCodeChannelPlugin[]): string {
+function profileFromClaudeCodeChannels(
+  agentName: string,
+  plugins: ClaudeCodeChannelPlugin[],
+): string {
   let profile = agentName || "default";
   for (const plugin of plugins) {
     const suffix = `-${plugin.plugin}`;
@@ -1437,14 +1444,7 @@ function addClaudeCodeChannelsDiscovery(
     baseUrl: "",
     env: {},
   };
-  setDiscoveredIdentity(
-    discovery,
-    profile,
-    eviId,
-    profile,
-    profile,
-    mode === "primary",
-  );
+  setDiscoveredIdentity(discovery, profile, eviId, profile, profile, mode === "primary");
   for (const plugin of activePlugins) {
     const interfaceKey = `${plugin.plugin}:main`;
     discovery.interfaces[interfaceKey] = {
@@ -1651,10 +1651,7 @@ function demoteDuplicatePrimaryRoutes(discovery: Discovery): void {
   }
 }
 
-export function applyPrimaryRouteSelections(
-  discovery: Discovery,
-  selections: string[],
-): Discovery {
+export function applyPrimaryRouteSelections(discovery: Discovery, selections: string[]): Discovery {
   const selected = new Set(selections);
   const next: Discovery = {
     ...discovery,
@@ -1795,11 +1792,17 @@ function mergeIdentityConfig(
   discovered: Identity,
 ): Record<string, unknown> {
   const existingActive = stringValue(
-    existing.active_evi ?? existing.activeEvi ?? existing.active_processor ?? existing.activeProcessor,
+    existing.active_evi ??
+      existing.activeEvi ??
+      existing.active_processor ??
+      existing.activeProcessor,
   );
   return {
     profile: stringValue(existing.profile, discovered.profile),
-    memory_scope: stringValue(existing.memory_scope ?? existing.memoryScope, discovered.memoryScope),
+    memory_scope: stringValue(
+      existing.memory_scope ?? existing.memoryScope,
+      discovered.memoryScope,
+    ),
     active_evi: existingActive || discovered.activeEvi,
     description: stringValue(existing.description, discovered.description),
   };
@@ -1962,12 +1965,7 @@ export function resolveProcessorEvi(
 
 function deploymentMatches(evi: Evi, deployment: string): boolean {
   if (!deployment) return true;
-  return [
-    evi.profile,
-    evi.agentId,
-    evi.sessionId,
-    evi.eviId,
-  ].filter(Boolean).includes(deployment);
+  return [evi.profile, evi.agentId, evi.sessionId, evi.eviId].filter(Boolean).includes(deployment);
 }
 
 function characterEngineScore(evi: Evi, character: Identity): number {
@@ -2286,7 +2284,11 @@ function tmuxCapture(session: string, lines = 80): string {
   return result.code === 0 ? result.stdout : "";
 }
 
-export function targetHealthy(running: boolean, healthPatterns: string[], matchedPatterns: string[]): boolean {
+export function targetHealthy(
+  running: boolean,
+  healthPatterns: string[],
+  matchedPatterns: string[],
+): boolean {
   if (healthPatterns.length === 0) return running;
   return matchedPatterns.length > 0;
 }
@@ -2642,7 +2644,11 @@ function compiledNoteFiles(dir: string): string[] {
   return files;
 }
 
-export function searchMemory(inventory: Inventory, query: string, limit = 20): MemorySearchResult[] {
+export function searchMemory(
+  inventory: Inventory,
+  query: string,
+  limit = 20,
+): MemorySearchResult[] {
   if (!query.trim()) throw new Error("memory search requires a query");
   const eventLog = concretePath(inventory.memoryEventLog);
   const eventResults = readMemoryEvents(inventory.memoryEventLog)
@@ -2770,10 +2776,7 @@ function markdownFilesUnder(dir: string): string[] {
 function writeManagedBlock(path: string, block: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const previous = readExistingFile(path);
-  const pattern = new RegExp(
-    `${NETWORK_MEMORY_BEGIN}[\\s\\S]*?${NETWORK_MEMORY_END}`,
-    "m",
-  );
+  const pattern = new RegExp(`${NETWORK_MEMORY_BEGIN}[\\s\\S]*?${NETWORK_MEMORY_END}`, "m");
   const managed = `${NETWORK_MEMORY_BEGIN}\n${block.trim()}\n${NETWORK_MEMORY_END}`;
   const next = pattern.test(previous)
     ? previous.replace(pattern, managed)
@@ -2798,10 +2801,7 @@ function providerMemorySources(evi: Evi): string[] {
   const stateDir = concretePath(evi.stateDir);
   if (evi.provider === "hermes-agent") {
     if (!stateDir) return [];
-    return [
-      join(stateDir, "memories", "MEMORY.md"),
-      join(stateDir, "memories", "USER.md"),
-    ];
+    return [join(stateDir, "memories", "MEMORY.md"), join(stateDir, "memories", "USER.md")];
   }
   if (evi.provider === "openclaw") {
     if (!workspace) return [];
@@ -2915,15 +2915,9 @@ function dispatchMethodFor(queueOnly = false): string {
   return "tmux";
 }
 
-function dispatchTask(
-  evi: Evi,
-  text: string,
-  options: DispatchTaskOptions,
-): DispatchTaskResult {
-  if (options.queueOnly)
-    return { delivered: false, method: "queue", detail: "queue-only" };
-  if (!evi.sessionId)
-    return { delivered: false, method: "tmux", detail: "missing-session-id" };
+function dispatchTask(evi: Evi, text: string, options: DispatchTaskOptions): DispatchTaskResult {
+  if (options.queueOnly) return { delivered: false, method: "queue", detail: "queue-only" };
+  if (!evi.sessionId) return { delivered: false, method: "tmux", detail: "missing-session-id" };
   if (!tmuxExists(evi.sessionId))
     return { delivered: false, method: "tmux", detail: "session-missing" };
   for (const command of tmuxSendCommands(evi.sessionId, text)) {
@@ -3065,7 +3059,9 @@ function confirmMigrationWrite(path: string, args: string[], asJson: boolean): b
 function selectedPrimaryRoutesFromArgs(args: string[], discovery: Discovery): string[] {
   const selections = optionValues(args, "--primary-route");
   if (selections.length === 0) return [];
-  const known = new Set(discovery.conflicts.flatMap((conflict) => conflict.routes.map((route) => route.key)));
+  const known = new Set(
+    discovery.conflicts.flatMap((conflict) => conflict.routes.map((route) => route.key)),
+  );
   const unknown = selections.filter((selection) => !known.has(selection));
   if (unknown.length > 0) {
     throw new Error(`unknown --primary-route: ${unknown.join(", ")}`);
@@ -3073,7 +3069,11 @@ function selectedPrimaryRoutesFromArgs(args: string[], discovery: Discovery): st
   return selections;
 }
 
-function promptPrimaryRouteSelections(discovery: Discovery, args: string[], asJson: boolean): string[] {
+function promptPrimaryRouteSelections(
+  discovery: Discovery,
+  args: string[],
+  asJson: boolean,
+): string[] {
   const selections = selectedPrimaryRoutesFromArgs(args, discovery);
   if (selections.length > 0 || discovery.conflicts.length === 0) return selections;
   if (hasFlag(args, "--dry-run")) return [];
@@ -3197,8 +3197,7 @@ function addEviFromArgs(providerArg: string, args: string[]): number {
     targets,
   );
   const profile = optionValue(args, "--profile") ?? "default";
-  const eviId =
-    optionValue(args, "--id") ?? `evi-${slug(provider)}-${slug(profile)}`;
+  const eviId = optionValue(args, "--id") ?? `evi-${slug(provider)}-${slug(profile)}`;
   const modelProvider = normalizeHermesModelProvider(optionValue(args, "--model-provider") ?? "");
   const evi: Evi = {
     eviId,
@@ -3260,7 +3259,8 @@ function cmdEviClone(args: string[]): number {
     sessionId: optionValue(args, "--session") ?? optionValue(args, "--session-id") ?? "",
     workspace: optionValue(args, "--workspace") ?? "",
     stateDir: optionValue(args, "--state-dir") ?? "",
-    networkId: optionValue(args, "--network") ?? optionValue(args, "--network-id") ?? source.networkId,
+    networkId:
+      optionValue(args, "--network") ?? optionValue(args, "--network-id") ?? source.networkId,
     replicaOf: source.eviId,
     role: optionValue(args, "--role") ?? "replica",
     modelProvider,
@@ -3318,7 +3318,8 @@ function cmdIdentityList(): number {
   const width = Math.max(...identities.map((identity) => identity.identityId.length));
   for (const identity of identities.sort((a, b) => a.identityId.localeCompare(b.identityId))) {
     const active = identity.activeEvi || "-";
-    const processor = active !== "-" && inventory.evis[active] ? inventory.evis[active].provider : "-";
+    const processor =
+      active !== "-" && inventory.evis[active] ? inventory.evis[active].provider : "-";
     console.log(
       `${identity.identityId.padEnd(width)}  profile=${identity.profile}  memory=${identity.memoryScope || "-"}  active=${active}  processor=${processor}`,
     );
@@ -3386,7 +3387,8 @@ function cmdCreateCharacter(args: string[]): number {
   const character: Identity = {
     identityId: characterId,
     profile: characterId,
-    memoryScope: optionValue(args, "--memory-scope") ?? optionValue(args, "--memory") ?? characterId,
+    memoryScope:
+      optionValue(args, "--memory-scope") ?? optionValue(args, "--memory") ?? characterId,
     activeEvi: "",
     description: optionValue(args, "--description") ?? "",
   };
@@ -3479,10 +3481,7 @@ function cmdSwitchCharacter(args: string[]): number {
   if (args[0] && !args[0].startsWith("--")) {
     throw new Error("switch requires --agent <agent> and --engine <engine>");
   }
-  const characterId = required(
-    optionValue(args, "--agent"),
-    "switch requires --agent <agent>",
-  );
+  const characterId = required(optionValue(args, "--agent"), "switch requires --agent <agent>");
   const engine = required(optionValue(args, "--engine"), "switch requires --engine <engine>");
   const deployment = optionValue(args, "--deployment") ?? "";
   const path = optionValue(args, "--config") ?? configPath();
@@ -3496,7 +3495,9 @@ function cmdSwitchCharacter(args: string[]): number {
   const statuses = nextTarget ? [startAndVerifyTarget(nextTarget)] : [];
   statuses.push(
     ...Object.entries(nextInventory.targets)
-      .filter(([runtime]) => runtime !== result.nextRuntime && !runtimeInUse(nextInventory, runtime))
+      .filter(
+        ([runtime]) => runtime !== result.nextRuntime && !runtimeInUse(nextInventory, runtime),
+      )
       .map(([, target]) => stopAndVerifyTarget(target)),
   );
   writeConfigData(path, result.data);
@@ -3519,11 +3520,10 @@ function cmdProcessorList(args: string[] = []): number {
   const rows = evis
     .sort((a, b) => a.eviId.localeCompare(b.eviId))
     .map((evi) => {
-      const identities =
-        Object.values(inventory.identities)
-          .filter((identity) => identity.activeEvi === evi.eviId)
-          .map((identity) => identity.identityId)
-          .sort();
+      const identities = Object.values(inventory.identities)
+        .filter((identity) => identity.activeEvi === evi.eviId)
+        .map((identity) => identity.identityId)
+        .sort();
       return {
         provider: evi.provider,
         selector: "",
@@ -3539,7 +3539,9 @@ function cmdProcessorList(args: string[] = []): number {
   }, {});
   for (const row of rows) {
     row.selector =
-      providerCounts[row.provider] === 1 ? row.provider : `${row.provider}:${row.profile || "default"}`;
+      providerCounts[row.provider] === 1
+        ? row.provider
+        : `${row.provider}:${row.profile || "default"}`;
   }
   if (hasFlag(args, "--json")) {
     console.log(JSON.stringify(rows, null, 2));
@@ -3604,7 +3606,9 @@ function telegramTokenFromArgs(args: string[]): string {
   const file = optionValue(args, "--token-file");
   if (file) return readFileSync(file, "utf8").trim();
   if (hasFlag(args, "--token-stdin")) return readFileSync(0, "utf8").trim();
-  throw new Error("channel telegram configure requires --token, --token-env, --token-file, or --token-stdin");
+  throw new Error(
+    "channel telegram configure requires --token, --token-env, --token-file, or --token-stdin",
+  );
 }
 
 function telegramEnvPath(home = homedir()): string {
@@ -3648,14 +3652,22 @@ function claudeCodeChannelsFromArgs(args: string[]): ClaudeCodeChannelPlugin[] {
 }
 
 function defaultClaudeCodeChannelsPluginDirs(channels: ClaudeCodeChannelPlugin[]): string[] {
-  const dirs: string[] = []
+  const dirs: string[] = [];
   if (channels.some((channel) => channel.plugin === "stackchan")) {
     const stackchanDir =
       process.env.STACKCHAN_CHANNEL_PLUGIN_DIR ??
-      join(homedir(), "ghq", "github.com", "schroneko", "stackchan-nukoevi", "channels", "stackchan")
-    if (existsSync(join(stackchanDir, ".claude-plugin", "plugin.json"))) dirs.push(stackchanDir)
+      join(
+        homedir(),
+        "ghq",
+        "github.com",
+        "schroneko",
+        "stackchan-nukoevi",
+        "channels",
+        "stackchan",
+      );
+    if (existsSync(join(stackchanDir, ".claude-plugin", "plugin.json"))) dirs.push(stackchanDir);
   }
-  return dirs
+  return dirs;
 }
 
 export function competingHermesEvisForClaudeCodeChannels(
@@ -3799,9 +3811,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const settingsContent = JSON.stringify(
     {
       channelsEnabled: true,
-      allowedChannels: channels.map(
-        (channel) => `plugin:${channel.plugin}@${channel.marketplace}`,
-      ),
+      allowedChannels: channels.map((channel) => `plugin:${channel.plugin}@${channel.marketplace}`),
       allowedChannelPlugins: channels,
       claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")],
     },
@@ -3919,7 +3929,10 @@ function cmdChannelTelegramModel(args: string[]): number {
   if (!evi) throw new Error(`unknown Claude Code Channels evi: ${eviId}`);
   const startScript = join(evi.stateDir, "start.sh");
   if (!existsSync(startScript)) throw new Error(`start script not found: ${startScript}`);
-  const nextScript = claudeCodeChannelsStartScriptWithModel(readFileSync(startScript, "utf8"), model);
+  const nextScript = claudeCodeChannelsStartScriptWithModel(
+    readFileSync(startScript, "utf8"),
+    model,
+  );
   writeFileSync(startScript, nextScript, { mode: 0o755 });
   chmodSync(startScript, 0o755);
   writeConfigData(path, setClaudeCodeChannelsModelConfig(data, eviId, model));

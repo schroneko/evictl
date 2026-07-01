@@ -117,9 +117,11 @@ describe("target health", () => {
   test("requires a matched health marker when configured", () => {
     expect(targetHealthy(true, ["Listening for channel messages from:"], [])).toBe(false);
     expect(
-      targetHealthy(true, ["Listening for channel messages from:"], [
-        "Listening for channel messages from:",
-      ]),
+      targetHealthy(
+        true,
+        ["Listening for channel messages from:"],
+        ["Listening for channel messages from:"],
+      ),
     ).toBe(true);
   });
 });
@@ -668,9 +670,9 @@ describe("identity routing", () => {
       identity,
     );
     const next = setInterfaceConfig(withIdentity, binding);
-    expect(
-      (next.identities as Record<string, Record<string, string>>).demo.active_evi,
-    ).toBe("evi-hermes-agent-grok");
+    expect((next.identities as Record<string, Record<string, string>>).demo.active_evi).toBe(
+      "evi-hermes-agent-grok",
+    );
     expect(
       (next.interfaces as Record<string, Record<string, string>>)["telegram:main"].identity_id,
     ).toBe("demo");
@@ -698,9 +700,9 @@ describe("identity routing", () => {
       "demo",
       "id:evi-hermes-agent-codex",
     );
-    expect(
-      (next.identities as Record<string, Record<string, string>>).demo.active_evi,
-    ).toBe("evi-hermes-agent-codex");
+    expect((next.identities as Record<string, Record<string, string>>).demo.active_evi).toBe(
+      "evi-hermes-agent-codex",
+    );
   });
 
   test("requires explicit processor provider profiles or ids", () => {
@@ -739,28 +741,30 @@ describe("identity routing", () => {
     expect(resolveProcessorEvi(inventory, "demo", "claude-code-channels:telegram").eviId).toBe(
       "evi-claude-code-channels-telegram",
     );
-    expect(resolveProcessorEvi(inventory, "demo", "id:evi-claude-code-channels-telegram").eviId).toBe(
-      "evi-claude-code-channels-telegram",
-    );
+    expect(
+      resolveProcessorEvi(inventory, "demo", "id:evi-claude-code-channels-telegram").eviId,
+    ).toBe("evi-claude-code-channels-telegram");
   });
 
   test("parses explicit processor selector options", () => {
-    expect(processorSelectorFromArgs(["demo", "--provider", "claude-code-channels"], "switch")).toBe(
-      "claude-code-channels",
-    );
+    expect(
+      processorSelectorFromArgs(["demo", "--provider", "claude-code-channels"], "switch"),
+    ).toBe("claude-code-channels");
     expect(
       processorSelectorFromArgs(
         ["demo", "--provider", "hermes-agent", "--profile", "demo"],
         "switch",
       ),
     ).toBe("hermes-agent:demo");
-    expect(processorSelectorFromArgs(["demo", "--id", "evi-openclaw"], "switch")).toBe("id:evi-openclaw");
+    expect(processorSelectorFromArgs(["demo", "--id", "evi-openclaw"], "switch")).toBe(
+      "id:evi-openclaw",
+    );
     expect(() => processorSelectorFromArgs(["demo", "claude-code-channels"], "switch")).toThrow(
       "requires explicit processor selection",
     );
-    expect(() => processorSelectorFromArgs(["demo", "--processor", "claude-code-channels"], "switch")).toThrow(
-      "requires explicit processor selection",
-    );
+    expect(() =>
+      processorSelectorFromArgs(["demo", "--processor", "claude-code-channels"], "switch"),
+    ).toThrow("requires explicit processor selection");
   });
 
   test("switches an identity processor by explicit provider profile", () => {
@@ -789,9 +793,9 @@ describe("identity routing", () => {
       "demo",
       "claude-code-channels:telegram",
     );
-    expect(
-      (next.identities as Record<string, Record<string, string>>).demo.active_evi,
-    ).toBe("evi-claude-code-channels-telegram");
+    expect((next.identities as Record<string, Record<string, string>>).demo.active_evi).toBe(
+      "evi-claude-code-channels-telegram",
+    );
   });
 
   test("keeps only the active processor route when switching an identity processor", () => {
@@ -840,9 +844,9 @@ describe("identity routing", () => {
       "id:evi-claude-code-channels-telegram",
     );
     const routes = result.data.routes as Record<string, Record<string, string>>;
-    expect(
-      (result.data.identities as Record<string, Record<string, string>>).demo.active_evi,
-    ).toBe("evi-claude-code-channels-telegram");
+    expect((result.data.identities as Record<string, Record<string, string>>).demo.active_evi).toBe(
+      "evi-claude-code-channels-telegram",
+    );
     expect(routes["telegram:hermes-agent:demo"]).toBeUndefined();
     expect(routes["telegram:claude-code-channels:telegram"].mode).toBe("primary");
     expect(result.previousRuntime).toBe("hermes-agent");
@@ -963,14 +967,17 @@ describe("Claude Code Channels", () => {
       env: { ANTHROPIC_BASE_URL: "https://api.example.test" },
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
       settingsFile: "/Users/example/.local/share/claude-telegram-channel/settings.json",
-      systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+      systemPromptFile:
+        "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       model: "haiku",
       dangerouslySkipPermissions: false,
     });
     expect(script).toContain("session_name='claude-code-channels-nukoevi'");
-    expect(script).toContain("env_file='/Users/example/.local/share/claude-telegram-channel/claude.env'");
+    expect(script).toContain(
+      "env_file='/Users/example/.local/share/claude-telegram-channel/claude.env'",
+    );
     expect(script).toContain('telegram_env_file="$HOME/.claude/channels/telegram/.env"');
-    expect(script).toContain("source \"$env_file\"");
+    expect(script).toContain('source "$env_file"');
     expect(script).toContain('source "$telegram_env_file"');
     expect(script).not.toContain('stackchan_env_file="$HOME/.config/stackchan/irodori.env"');
     expect(script).toContain("export ANTHROPIC_BASE_URL='https://api.example.test'");
@@ -979,13 +986,17 @@ describe("Claude Code Channels", () => {
     expect(script).toContain("'TELEGRAM_BOT_TOKEN'");
     expect(script).toContain('tmux_env_args+=(-e "$key=${(P)key}")');
     expect(script).toContain('command="exec ${claude_command}"');
-    expect(script).toContain('max_session_seconds="${CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS:-21600}"');
+    expect(script).toContain(
+      'max_session_seconds="${CLAUDE_CODE_CHANNELS_MAX_SESSION_SECONDS:-21600}"',
+    );
     expect(script).toContain('tmux display-message -p -t "$session_name" "#{session_created}"');
     expect(script).toContain('tmux kill-session -t "$session_name"');
     expect(script).toContain("--settings");
     expect(script).toContain("/Users/example/.local/share/claude-telegram-channel/settings.json");
     expect(script).toContain("--append-system-prompt-file");
-    expect(script).toContain("/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md");
+    expect(script).toContain(
+      "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+    );
     expect(script).toContain("'--tools' 'default'");
     expect(script).toContain("--permission-mode");
     expect(script).toContain("bypassPermissions");
@@ -1010,7 +1021,8 @@ describe("Claude Code Channels", () => {
       env: {},
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
       settingsFile: "/Users/example/.local/share/claude-telegram-channel/settings.json",
-      systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+      systemPromptFile:
+        "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       model: "haiku",
       dangerouslySkipPermissions: false,
     });
@@ -1043,11 +1055,14 @@ describe("Claude Code Channels", () => {
       env: {},
       envFile: "/Users/example/.local/share/claude-telegram-channel/claude.env",
       settingsFile: "/Users/example/.local/share/claude-telegram-channel/settings.json",
-      systemPromptFile: "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
+      systemPromptFile:
+        "/Users/example/.local/share/claude-telegram-channel/channels-system-prompt.md",
       model: "haiku",
       dangerouslySkipPermissions: false,
     });
-    expect(script).toContain("'--plugin-dir' '/Users/example/stackchan-nukoevi/channels/stackchan'");
+    expect(script).toContain(
+      "'--plugin-dir' '/Users/example/stackchan-nukoevi/channels/stackchan'",
+    );
     expect(script).toContain("'--channels' 'plugin:stackchan@claude-plugins-official'");
   });
 
@@ -1160,9 +1175,9 @@ describe("Claude Code Channels", () => {
         },
       },
     });
-    expect(competingHermesEvisForClaudeCodeChannels(inventory, "demo").map((evi) => evi.eviId)).toEqual([
-      "evi-hermes-agent-demo",
-    ]);
+    expect(
+      competingHermesEvisForClaudeCodeChannels(inventory, "demo").map((evi) => evi.eviId),
+    ).toEqual(["evi-hermes-agent-demo"]);
   });
 
   test("builds a launch agent plist for the channel start script", () => {
@@ -1182,9 +1197,7 @@ describe("Claude Code Channels", () => {
   });
 
   test("stores Claude API keys as shell-safe environment content", () => {
-    expect(claudeApiEnvContent("sk-ant-abc'def")).toBe(
-      "ANTHROPIC_API_KEY='sk-ant-abc'\\''def'\n",
-    );
+    expect(claudeApiEnvContent("sk-ant-abc'def")).toBe("ANTHROPIC_API_KEY='sk-ant-abc'\\''def'\n");
   });
 
   test("prefers an Anthropic API key env var for channel auth", () => {
@@ -1273,7 +1286,9 @@ describe("Claude Code Channels", () => {
       },
     );
     const inventory = loadInventory(data);
-    expect(inventory.targets["claude-code-channels"].label).toBe("com.local.claude-telegram-channel");
+    expect(inventory.targets["claude-code-channels"].label).toBe(
+      "com.local.claude-telegram-channel",
+    );
     expect(inventory.targets["claude-code-channels"].plist).toBe(
       "/Users/example/Library/LaunchAgents/com.local.claude-telegram-channel.plist",
     );
@@ -1555,7 +1570,9 @@ describe("tmux send", () => {
           },
         }),
       );
-      expect(main(["send", "evi-hermes-agent-grok", "--text", "Search X", "--config", config])).toBe(1);
+      expect(
+        main(["send", "evi-hermes-agent-grok", "--text", "Search X", "--config", config]),
+      ).toBe(1);
       expect(
         main([
           "send",
@@ -1597,9 +1614,9 @@ describe("tmux send", () => {
           },
         }),
       );
-      expect(
-        main(["send", "demo", "--text", "Search X", "--queue-only", "--config", config]),
-      ).toBe(0);
+      expect(main(["send", "demo", "--text", "Search X", "--queue-only", "--config", config])).toBe(
+        0,
+      );
       const [event] = readMemoryEvents(eventLog);
       expect(event.target_evi).toBe("evi-hermes-agent-grok");
       expect(event.subject).toBe("demo");
@@ -1668,8 +1685,8 @@ describe("discovery", () => {
       writeFileSync(
         startScript,
         [
-          "session_name=\"claude-code-channels-demo\"",
-          "exec tmux new-session -d -s \"${session_name}\" \"claude --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official --name demo-telegram\"",
+          'session_name="claude-code-channels-demo"',
+          'exec tmux new-session -d -s "${session_name}" "claude --channels plugin:telegram@claude-plugins-official --channels plugin:discord@claude-plugins-official --name demo-telegram"',
         ].join("\n"),
       );
       const discovery = discoverFromPlistRecords(
@@ -1776,9 +1793,9 @@ describe("discovery", () => {
       expect(report.adoptions.find((item) => item.runtime === "openclaw")?.adoption).toBe(
         "processor-candidate",
       );
-      expect(
-        report.adoptions.find((item) => item.runtime === "openclaw")?.memoryPolicy,
-      ).toContain("stay native");
+      expect(report.adoptions.find((item) => item.runtime === "openclaw")?.memoryPolicy).toContain(
+        "stay native",
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1862,7 +1879,9 @@ describe("discovery", () => {
       expect(discovery.evis["evi-openclaw-alpha"].workspace).toBe(
         join(root, ".openclaw", "agents", "alpha", "agent"),
       );
-      expect(discovery.sources.filter((source) => source.kind === "agent-workspace")).toHaveLength(2);
+      expect(discovery.sources.filter((source) => source.kind === "agent-workspace")).toHaveLength(
+        2,
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
