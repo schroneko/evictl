@@ -53,8 +53,25 @@ AI エージェント名は外側の identity です。エンジンはその ide
 応答する内側の runtime です。
 
 `migration` は既存の Hermes Agent、OpenClaw、Claude Code Channels instance
-を `~/.config/evictl/config.json` に採用します。provider-native な file、
+を既定プロファイルの `profiles/default/config.json` に採用します。provider-native な file、
 credential、session、log、memory store を変換、削除、移動しません。
+
+## プロファイル
+
+プロファイルの正本はこの repository の `profiles/` です。プロファイルを
+指定しない場合は `profiles/default/` の `config.json` を読み込みます。
+名前付きプロファイルは `profiles/<name>/` に置き、`EVICTL_PROFILE` で選択します。
+
+```bash
+EVICTL_PROFILE=nukoevi evictl status
+```
+
+プロファイルの保存場所を別の checkout へ切り替える場合は
+`EVICTL_PROFILE_ROOT` を使います。`XDG_CONFIG_HOME` と `--config` は明示的な
+設定ファイル指定として、既定プロファイルより優先されます。
+
+プロファイルには persona、memory、routing、workspace の定義を保存できます。
+provider credential、token、session、log、database、cache は保存しません。
 
 ## 日常利用
 

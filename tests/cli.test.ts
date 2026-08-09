@@ -29,9 +29,11 @@ import {
   compileMemoryNotes,
   compileNetworkMemory,
   competingHermesEvisForClaudeCodeChannels,
+  configPath,
   createFeedbackEvent,
   createTaskEvent,
   discoverFromPlistRecords,
+  expandPath,
   discoverOpenClawHome,
   duplicatePrimaryRoutes,
   homebrewAutoupdateAgents,
@@ -41,6 +43,9 @@ import {
   openClawSetupPlan,
   parseGlobalOptions,
   parseProcessPids,
+  profileConfigPath,
+  profileName,
+  profileRoot,
   promoteMemoryEvents,
   queueTaskEvent,
   readMemoryEvents,
@@ -69,12 +74,24 @@ import {
 } from "../src/cli.ts";
 
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+const originalEvictlProfile = process.env.EVICTL_PROFILE;
+const originalEvictlProfileRoot = process.env.EVICTL_PROFILE_ROOT;
 
 afterEach(() => {
   if (originalXdgConfigHome === undefined) {
     delete process.env.XDG_CONFIG_HOME;
   } else {
     process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+  }
+  if (originalEvictlProfile === undefined) {
+    delete process.env.EVICTL_PROFILE;
+  } else {
+    process.env.EVICTL_PROFILE = originalEvictlProfile;
+  }
+  if (originalEvictlProfileRoot === undefined) {
+    delete process.env.EVICTL_PROFILE_ROOT;
+  } else {
+    process.env.EVICTL_PROFILE_ROOT = originalEvictlProfileRoot;
   }
 });
 
@@ -109,6 +126,46 @@ describe("defaults", () => {
     expect(DEFAULT_TARGETS["claude-code-channels"].healthProcessPatterns).toContain(
       "claude-plugins-official/(telegram|discord)",
     );
+  });
+
+  test("uses the checked-in default profile when no override is set", () => {
+    delete process.env.XDG_CONFIG_HOME;
+    delete process.env.EVICTL_PROFILE;
+    delete process.env.EVICTL_PROFILE_ROOT;
+
+    expect(profileName()).toBe("default");
+    expect(configPath()).toBe(profileConfigPath("default"));
+    expect(configPath()).toEndWith(join("profiles", "default", "config.json"));
+  });
+
+  test("selects a named profile from the environment", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-profile-root-"));
+    try {
+      delete process.env.XDG_CONFIG_HOME;
+      process.env.EVICTL_PROFILE_ROOT = root;
+      process.env.EVICTL_PROFILE = "nukoevi";
+
+      expect(profileName()).toBe("nukoevi");
+      expect(profileRoot()).toBe(join(root, "nukoevi"));
+      expect(configPath()).toBe(join(root, "nukoevi", "config.json"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("expands paths relative to the selected profile", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-profile-path-"));
+    try {
+      delete process.env.XDG_CONFIG_HOME;
+      process.env.EVICTL_PROFILE_ROOT = root;
+      process.env.EVICTL_PROFILE = "default";
+
+      expect(expandPath("${EVICTL_PROFILE_DIR}/hermes/nukoevi")).toBe(
+        join(root, "default", "hermes", "nukoevi"),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

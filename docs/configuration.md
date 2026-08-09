@@ -1,11 +1,18 @@
 # Configuration
 
 `evictl` keeps its own inventory of AI agents, engine deployments, routes, and
-memory sync state. The default config file is:
+memory sync state. The canonical default profile is shipped with the repository:
 
 ```bash
-~/.config/evictl/config.json
+profiles/default/config.json
 ```
+
+Named profiles live under `profiles/<name>/`. Set `EVICTL_PROFILE` to select one
+of them, or set `EVICTL_PROFILE_ROOT` to use a different profile checkout. An
+explicit `XDG_CONFIG_HOME` or `--config` path takes precedence over the profile
+defaults. Profile data may include persona, memory, routing, and workspace
+definitions, but must not include provider credentials, tokens, sessions, logs,
+databases, or caches.
 
 ## Discovery And Adoption
 

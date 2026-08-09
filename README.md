@@ -56,8 +56,20 @@ The AI agent name is the outside identity. The engine is the inside runtime that
 answers for it.
 
 `migration` adopts existing Hermes Agent, OpenClaw, and Claude Code Channels
-instances into `~/.config/evictl/config.json`. It does not convert, delete, or
+instances into the default profile at `profiles/default/config.json`. It does not convert, delete, or
 move provider-native files, credentials, sessions, logs, or memory stores.
+
+## Profiles
+
+Profiles are canonical repository data under `profiles/`. The default profile is
+`profiles/default/config.json`. Named profiles use `profiles/<name>/` and can be
+selected with `EVICTL_PROFILE`. Set `EVICTL_PROFILE_ROOT` to use another profile
+checkout. An explicit `XDG_CONFIG_HOME` or `--config` path takes precedence over
+the profile defaults.
+
+Profile data may include persona, memory, routing, and workspace definitions.
+Provider credentials, tokens, sessions, logs, databases, and caches must not be
+stored in a profile.
 
 ## Daily Use
 

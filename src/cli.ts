@@ -233,6 +233,11 @@ export type ParsedCliArgs = {
   options: GlobalOptions;
 };
 
+export const DEFAULT_PROFILE_NAME = "default";
+const PROFILE_NAME_ENV = "EVICTL_PROFILE";
+const PROFILE_ROOT_ENV = "EVICTL_PROFILE_ROOT";
+const PROFILE_DIR_TOKEN = "${EVICTL_PROFILE_DIR}";
+
 type Command = (args: string[], options: GlobalOptions) => number;
 
 const DEFAULT_GLOBAL_OPTIONS: GlobalOptions = {
@@ -460,15 +465,46 @@ function launchAgentLabel(content: string, file: string): string {
 
 export function expandPath(value?: string): string | undefined {
   if (!value) return undefined;
+  if (value === PROFILE_DIR_TOKEN) return profileRoot();
+  if (value.startsWith(`${PROFILE_DIR_TOKEN}/`)) {
+    return join(profileRoot(), value.slice(PROFILE_DIR_TOKEN.length + 1));
+  }
+  return expandUserPath(value);
+}
+
+function expandUserPath(value: string): string {
   if (value === "~") return homedir();
   if (value.startsWith("~/")) return join(homedir(), value.slice(2));
   return value;
 }
 
+function validateProfileName(value: string): string {
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(value)) {
+    throw new Error(`invalid profile name: ${value}`);
+  }
+  return value;
+}
+
+export function profileName(value = process.env[PROFILE_NAME_ENV]): string {
+  return validateProfileName(value?.trim() || DEFAULT_PROFILE_NAME);
+}
+
+export function profileRoot(profile = profileName()): string {
+  const configuredRoot = process.env[PROFILE_ROOT_ENV];
+  const root = configuredRoot
+    ? expandUserPath(configuredRoot)
+    : join(dirname(import.meta.dir), "profiles");
+  return join(root, validateProfileName(profile));
+}
+
+export function profileConfigPath(profile = profileName()): string {
+  return join(profileRoot(profile), "config.json");
+}
+
 export function configPath(): string {
   const xdgConfigHome = process.env.XDG_CONFIG_HOME;
   if (xdgConfigHome) return join(xdgConfigHome, "evictl", "config.json");
-  return join(homedir(), ".config", "evictl", "config.json");
+  return profileConfigPath();
 }
 
 export function loadConfigData(path = configPath()): Record<string, unknown> {
@@ -3969,8 +4005,16 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const start = hasFlag(args, "--start");
   const dryRun = hasFlag(args, "--dry-run");
   const json = hasFlag(args, "--json");
-  const workspace = optionValue(args, "--workspace") ?? homedir();
-  const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
+  const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const eviId = `evi-claude-code-channels-${slug(identityId)}`;
+  const configuredEvi = objectValue(objectValue(data.evis)[eviId]);
+  const configuredWorkspace = expandPath(stringValue(configuredEvi.workspace));
+  const configuredStateDir = expandPath(
+    stringValue(configuredEvi.state_dir ?? configuredEvi.stateDir),
+  );
+  const workspace = optionValue(args, "--workspace") ?? configuredWorkspace ?? homedir();
+  const stateDir = optionValue(args, "--state-dir") ?? configuredStateDir ?? claudeChannelsStateDir();
   const env = envFromArgs(args);
   const model = optionValue(args, "--model") ?? "";
   const envFile = optionValue(args, "--env-file") ?? claudeApiEnvPath(stateDir);
@@ -4030,9 +4074,8 @@ function cmdChannelTelegramSetup(args: string[]): number {
     stdoutPath: join(stateDir, "launchd.out.log"),
     stderrPath: join(stateDir, "launchd.err.log"),
   });
-  const path = optionValue(args, "--config") ?? configPath();
   const next = claudeCodeChannelsTelegramConfig(
-    loadConfigData(path),
+    data,
     identityId,
     workspace,
     stateDir,

@@ -1,0 +1,143 @@
+{
+  "targets": {
+    "claude-code-channels": {
+      "provider": "claude-code-channels",
+      "label": "com.local.claude-code-channels",
+      "plist": "~/Library/LaunchAgents/com.local.claude-code-channels.plist",
+      "tmux_sessions": [
+        "claude-code-channels-nukoevi"
+      ],
+      "process_patterns": [
+        "claude.*plugin:(telegram|discord)",
+        "claude-code-channels"
+      ],
+      "health_patterns": [
+        "Listening for channel messages from:"
+      ]
+    },
+    "hermes-agent": {
+      "provider": "hermes-agent",
+      "label": "ai.hermes.gateway",
+      "plist": "~/Library/LaunchAgents/ai.hermes.gateway.plist",
+      "tmux_sessions": [
+        "hermes-agent"
+      ],
+      "process_patterns": [
+        "hermes_cli.main",
+        "ai.hermes.gateway",
+        "cloudflared.*\\.hermes"
+      ],
+      "health_patterns": []
+    },
+    "openclaw": {
+      "provider": "openclaw",
+      "label": "ai.openclaw.gateway",
+      "plist": "~/Library/LaunchAgents/ai.openclaw.gateway.plist",
+      "tmux_sessions": [],
+      "process_patterns": [
+        "openclaw",
+        "ai.openclaw.gateway",
+        "com.clawdbot.gateway"
+      ],
+      "health_patterns": []
+    }
+  },
+  "evis": {
+    "evi-claude-code-channels-nukoevi": {
+      "runtime": "claude-code-channels",
+      "provider": "claude-code-channels",
+      "profile": "nukoevi",
+      "agent_id": "nukoevi-telegram",
+      "session_id": "claude-code-channels-nukoevi",
+      "workspace": "${EVICTL_PROFILE_DIR}/claude-code-channels/nukoevi",
+      "state_dir": "${EVICTL_PROFILE_DIR}/claude-code-channels/nukoevi",
+      "network_id": "default",
+      "replica_of": "",
+      "role": "replica",
+      "model_provider": "",
+      "model": "claude-opus-4-8",
+      "base_url": "",
+      "env": {}
+    },
+    "evi-hermes-agent-nukoevi": {
+      "runtime": "hermes-agent",
+      "provider": "hermes-agent",
+      "profile": "nukoevi",
+      "agent_id": "nukoevi",
+      "session_id": "",
+      "workspace": "${EVICTL_PROFILE_DIR}/hermes/nukoevi",
+      "state_dir": "${EVICTL_PROFILE_DIR}/hermes/nukoevi",
+      "network_id": "default",
+      "replica_of": "",
+      "role": "replica",
+      "model_provider": "",
+      "model": "",
+      "base_url": "",
+      "env": {}
+    },
+    "evi-openclaw-default": {
+      "runtime": "openclaw",
+      "provider": "openclaw",
+      "profile": "default",
+      "agent_id": "main",
+      "session_id": "",
+      "workspace": "${EVICTL_PROFILE_DIR}/openclaw/default/workspace",
+      "state_dir": "${EVICTL_PROFILE_DIR}/openclaw/default",
+      "network_id": "default",
+      "replica_of": "",
+      "role": "replica",
+      "model_provider": "openai",
+      "model": "openai/gpt-5.5",
+      "base_url": "",
+      "env": {}
+    }
+  },
+  "routes": {
+    "telegram:claude-code-channels:nukoevi": {
+      "channel": "telegram",
+      "account_id": "default",
+      "peer_id": "",
+      "target_evi": "evi-claude-code-channels-nukoevi",
+      "mode": "primary"
+    },
+    "stackchan:claude-code-channels:nukoevi": {
+      "channel": "stackchan",
+      "account_id": "default",
+      "peer_id": "",
+      "target_evi": "evi-claude-code-channels-nukoevi",
+      "mode": "primary"
+    }
+  },
+  "memory": {
+    "event_log": "${EVICTL_PROFILE_DIR}/memory/events.jsonl",
+    "compiled_notes": "${EVICTL_PROFILE_DIR}/memory"
+  },
+  "identities": {
+    "default": {
+      "profile": "default",
+      "memory_scope": "default",
+      "active_evi": "evi-openclaw-default",
+      "description": "Default evictl identity"
+    },
+    "nukoevi": {
+      "profile": "nukoevi",
+      "memory_scope": "nukoevi",
+      "active_evi": "evi-claude-code-channels-nukoevi",
+      "description": "Nukoevi identity"
+    }
+  },
+  "interfaces": {
+    "telegram:main": {
+      "kind": "telegram",
+      "address": "main",
+      "identity_id": "nukoevi",
+      "mode": "primary"
+    },
+    "stackchan:main": {
+      "kind": "stackchan",
+      "address": "main",
+      "identity_id": "nukoevi",
+      "mode": "primary"
+    }
+  }
+}

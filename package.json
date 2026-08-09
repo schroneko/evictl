@@ -26,6 +26,7 @@
     "bin",
     "src",
     "skills",
+    "profiles",
     "README.md",
     "README.ja.md",
     "docs",
@@ -43,8 +44,8 @@
     "check": "tsc --noEmit && bun run lint:text",
     "test": "bun test",
     "build": "bun build ./src/cli.ts --compile --outfile ./dist/evictl",
-    "lint:text": "textlint \"**/*.md\"",
-    "lint:text:fix": "textlint --fix \"**/*.md\"",
+    "lint:text": "textlint \"README.md\" \"README.ja.md\" \"docs/**/*.md\" \"skills/**/*.md\" \"profiles/*/README.md\"",
+    "lint:text:fix": "textlint --fix \"README.md\" \"README.ja.md\" \"docs/**/*.md\" \"skills/**/*.md\" \"profiles/*/README.md\"",
     "prepack": "bun test && bun run check"
   },
   "devDependencies": {
