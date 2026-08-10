@@ -6,6 +6,7 @@ import {
   appendFileSync,
   chmodSync,
   closeSync,
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -21,7 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 export type Target = {
   name: string;
@@ -236,7 +237,11 @@ export type ParsedCliArgs = {
 export const DEFAULT_PROFILE_NAME = "default";
 const PROFILE_NAME_ENV = "EVICTL_PROFILE";
 const PROFILE_ROOT_ENV = "EVICTL_PROFILE_ROOT";
-const PROFILE_DIR_TOKEN = "${EVICTL_PROFILE_DIR}";
+const DATA_ROOT_ENV = "EVICTL_DATA_ROOT";
+export const PROFILE_DIR_TOKEN = "${EVICTL_PROFILE_DIR}";
+export const DATA_ROOT_TOKEN = "${EVICTL_DATA_ROOT}";
+export const DATA_DIR_TOKEN = "${EVICTL_DATA_DIR}";
+export const DEFAULT_DATA_ROOT = "~/.local/share/evictl/profiles";
 
 type Command = (args: string[], options: GlobalOptions) => number;
 
@@ -469,6 +474,14 @@ export function expandPath(value?: string): string | undefined {
   if (value.startsWith(`${PROFILE_DIR_TOKEN}/`)) {
     return join(profileRoot(), value.slice(PROFILE_DIR_TOKEN.length + 1));
   }
+  if (value === DATA_ROOT_TOKEN) return dataRoot();
+  if (value.startsWith(`${DATA_ROOT_TOKEN}/`)) {
+    return join(dataRoot(), value.slice(DATA_ROOT_TOKEN.length + 1));
+  }
+  if (value === DATA_DIR_TOKEN) return dataDir();
+  if (value.startsWith(`${DATA_DIR_TOKEN}/`)) {
+    return join(dataDir(), value.slice(DATA_DIR_TOKEN.length + 1));
+  }
   return expandUserPath(value);
 }
 
@@ -495,6 +508,18 @@ export function profileRoot(profile = profileName()): string {
     ? expandUserPath(configuredRoot)
     : join(dirname(import.meta.dir), "profiles");
   return join(root, validateProfileName(profile));
+}
+
+export function dataRoot(): string {
+  return expandUserPath(process.env[DATA_ROOT_ENV]?.trim() || DEFAULT_DATA_ROOT);
+}
+
+export function dataDir(profile = profileName()): string {
+  return join(dataRoot(), validateProfileName(profile));
+}
+
+export function profileDataDir(profile = profileName()): string {
+  return dataDir(profile);
 }
 
 export function profileConfigPath(profile = profileName()): string {
@@ -698,11 +723,11 @@ export function loadInventory(data = loadConfigData()): Inventory {
     routes,
     memoryEventLog: stringValue(
       memory.event_log ?? memory.eventLog,
-      "~/.local/share/evictl/events.jsonl",
+      `${DATA_DIR_TOKEN}/memory/events.jsonl`,
     ),
     memoryCompiledNotes: stringValue(
       memory.compiled_notes ?? memory.compiledNotes,
-      "~/.local/share/evictl/memory",
+      `${DATA_DIR_TOKEN}/memory`,
     ),
   };
 }
@@ -715,8 +740,8 @@ function defaultDiscovery(): Discovery {
     interfaces: {},
     routes: {},
     memory: {
-      eventLog: "~/.local/share/evictl/events.jsonl",
-      compiledNotes: "~/.local/share/evictl/memory",
+      eventLog: `${DATA_DIR_TOKEN}/memory/events.jsonl`,
+      compiledNotes: `${DATA_DIR_TOKEN}/memory`,
     },
     sources: [],
     warnings: [],
@@ -2491,6 +2516,174 @@ function concretePath(value: string): string {
   return expandPath(value) ?? value;
 }
 
+export type RuntimePreparationResult = {
+  sourceDir: string;
+  stateDir: string;
+  workspace: string;
+  copied: string[];
+  skipped: string[];
+};
+
+const RUNTIME_PRIVATE_NAMES = new Set([
+  ".env",
+  "credentials",
+  "credentials.json",
+  "auth.json",
+  "tokens.json",
+  "memory",
+  "memories",
+  "sessions",
+  "logs",
+  "cache",
+  "caches",
+  "database",
+  "databases",
+  "locks",
+  "memory.md",
+  "user.md",
+]);
+
+function pathExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isPathWithin(root: string, path: string): boolean {
+  const resolvedRoot = resolve(root);
+  const resolvedPath = resolve(path);
+  return resolvedPath === resolvedRoot || resolvedPath.startsWith(`${resolvedRoot}${sep}`);
+}
+
+function assertRuntimePath(path: string): void {
+  if (isPathWithin(dirname(profileRoot()), path)) {
+    throw new Error(`runtime path must be outside the profile source: ${path}`);
+  }
+}
+
+function shouldSkipRuntimePath(relativePath: string): boolean {
+  const parts = relativePath.split(sep).filter(Boolean);
+  return parts.some((part, index) => {
+    const name = part.toLowerCase();
+    if (RUNTIME_PRIVATE_NAMES.has(name)) return true;
+    if (index === parts.length - 1 && (name.startsWith(".env.") || name.endsWith(".db"))) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function copyRuntimeTree(
+  sourceDir: string,
+  destinationDir: string,
+  copied: string[],
+  skipped: string[],
+  relativePath = "",
+): void {
+  if (!directoryExists(sourceDir)) return;
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    const nextRelativePath = relativePath ? join(relativePath, entry.name) : entry.name;
+    const destination = join(destinationDir, entry.name);
+    if (shouldSkipRuntimePath(nextRelativePath)) {
+      if (pathExists(destination)) skipped.push(nextRelativePath);
+      continue;
+    }
+    const source = join(sourceDir, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) {
+      mkdirSync(destination, { recursive: true });
+      copyRuntimeTree(source, destination, copied, skipped, nextRelativePath);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (pathExists(destination)) {
+      skipped.push(nextRelativePath);
+      continue;
+    }
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+    copied.push(nextRelativePath);
+  }
+}
+
+function copyRuntimeSource(
+  sourceDir: string,
+  destinationDir: string,
+  entries: string[],
+  copied: string[],
+  skipped: string[],
+): void {
+  for (const entry of entries) {
+    const source = join(sourceDir, entry);
+    if (directoryExists(source)) {
+      mkdirSync(join(destinationDir, entry), { recursive: true });
+      copyRuntimeTree(source, join(destinationDir, entry), copied, skipped, entry);
+      continue;
+    }
+    if (!pathExists(source) || shouldSkipRuntimePath(entry)) continue;
+    const destination = join(destinationDir, entry);
+    if (pathExists(destination)) {
+      skipped.push(entry);
+      continue;
+    }
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+    copied.push(entry);
+  }
+}
+
+function runtimeSourceDirectory(evi: Evi): string {
+  const profile = validateProfileName(evi.profile || DEFAULT_PROFILE_NAME);
+  const root = profileRoot();
+  if (evi.provider === "hermes-agent") return join(root, "hermes", profile);
+  if (evi.provider === "openclaw") return join(root, "openclaw", profile, "workspace");
+  return join(root, "claude-code-channels", profile);
+}
+
+function runtimeStateDirectory(evi: Evi): string {
+  const profile = validateProfileName(evi.profile || DEFAULT_PROFILE_NAME);
+  return concretePath(evi.stateDir || `${DATA_DIR_TOKEN}/${evi.provider}/${profile}`);
+}
+
+function runtimeWorkspaceDirectory(evi: Evi, stateDir: string): string {
+  if (evi.workspace) return concretePath(evi.workspace);
+  if (evi.provider === "openclaw") return join(stateDir, "workspace");
+  return stateDir;
+}
+
+export function prepareEviRuntime(evi: Evi): RuntimePreparationResult {
+  const stateDir = runtimeStateDirectory(evi);
+  const workspace = runtimeWorkspaceDirectory(evi, stateDir);
+  assertRuntimePath(stateDir);
+  assertRuntimePath(workspace);
+  mkdirSync(stateDir, { recursive: true });
+  mkdirSync(workspace, { recursive: true });
+  const sourceDir = runtimeSourceDirectory(evi);
+  const copied: string[] = [];
+  const skipped: string[] = [];
+  if (evi.provider === "hermes-agent") {
+    copyRuntimeSource(sourceDir, stateDir, ["SOUL.md", "mission.md", "skills"], copied, skipped);
+  } else if (evi.provider === "openclaw") {
+    copyRuntimeSource(
+      sourceDir,
+      workspace,
+      ["AGENTS.md", "BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md"],
+      copied,
+      skipped,
+    );
+  } else {
+    copyRuntimeSource(sourceDir, stateDir, ["channels-system-prompt.md"], copied, skipped);
+  }
+  return { sourceDir, stateDir, workspace, copied, skipped };
+}
+
+export function seedEviRuntime(evi: Evi): RuntimePreparationResult {
+  return prepareEviRuntime(evi);
+}
+
 export type OpenClawSetupPlanOptions = {
   home?: string;
   prefix?: string;
@@ -2548,6 +2741,8 @@ export function openClawSetupPlan(options: OpenClawSetupPlanOptions = {}): OpenC
   const binDir = concretePath(options.binDir ?? join(home, ".local", "bin"));
   const exposedBin = join(binDir, "openclaw");
   const workspace = concretePath(options.workspace ?? join(prefix, "workspace"));
+  assertRuntimePath(prefix);
+  assertRuntimePath(workspace);
   const model = options.model ?? DEFAULT_OPENCLAW_MODEL;
   const authProvider = options.authProvider ?? "codex";
   const authProfileId = options.authProfileId ?? DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE;
@@ -2665,7 +2860,21 @@ export function applyOpenClawSetupConfig(
   data: Record<string, unknown>,
   plan: OpenClawSetupPlan,
 ): Record<string, unknown> {
-  return spawnEviConfig(setTargetConfig(data, plan.target, true), plan.evi, true);
+  const configured = objectValue(objectValue(data.evis)[plan.evi.eviId]);
+  const configuredWorkspace = stringValue(configured.workspace);
+  const configuredStateDir = stringValue(configured.state_dir ?? configured.stateDir);
+  const evi = {
+    ...plan.evi,
+    workspace:
+      configuredWorkspace && concretePath(configuredWorkspace) === plan.evi.workspace
+        ? configuredWorkspace
+        : plan.evi.workspace,
+    stateDir:
+      configuredStateDir && concretePath(configuredStateDir) === plan.evi.stateDir
+        ? configuredStateDir
+        : plan.evi.stateDir,
+  };
+  return spawnEviConfig(setTargetConfig(data, plan.target, true), evi, true);
 }
 
 function hasFlag(args: string[], flag: string): boolean {
@@ -2707,6 +2916,9 @@ function numberOption(args: string[], name: string, fallback: number): number {
 export function runtimeEnvForEvi(evi: Evi): Record<string, string> {
   const env = { ...evi.env };
   if (evi.provider === "hermes-agent") {
+    if (!Object.prototype.hasOwnProperty.call(env, "HERMES_HOME") && evi.stateDir) {
+      env.HERMES_HOME = concretePath(evi.stateDir);
+    }
     if (evi.modelProvider) env.HERMES_INFERENCE_PROVIDER = evi.modelProvider;
     if (evi.model) {
       env.HERMES_MODEL = evi.model;
@@ -2807,6 +3019,7 @@ export function createTaskEvent(
 
 export function appendMemoryEvent(eventLog: string, event: MemoryEvent): string {
   const path = concretePath(eventLog);
+  assertRuntimePath(path);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(event)}\n`);
   return path;
@@ -2835,6 +3048,7 @@ function parseMemoryEvent(value: unknown): MemoryEvent | undefined {
 
 export function readMemoryEvents(eventLog: string): MemoryEvent[] {
   const path = concretePath(eventLog);
+  assertRuntimePath(path);
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")
     .split("\n")
@@ -2879,6 +3093,9 @@ export function searchMemory(
 ): MemorySearchResult[] {
   if (!query.trim()) throw new Error("memory search requires a query");
   const eventLog = concretePath(inventory.memoryEventLog);
+  const compiledNotes = concretePath(inventory.memoryCompiledNotes);
+  assertRuntimePath(eventLog);
+  assertRuntimePath(compiledNotes);
   const eventResults = readMemoryEvents(inventory.memoryEventLog)
     .filter((event) =>
       matchesQuery(
@@ -2905,7 +3122,7 @@ export function searchMemory(
       verdict: event.verdict,
       text: event.text,
     }));
-  const noteResults = compiledNoteFiles(concretePath(inventory.memoryCompiledNotes)).flatMap(
+  const noteResults = compiledNoteFiles(compiledNotes).flatMap(
     (path) =>
       readFileSync(path, "utf8")
         .split("\n")
@@ -2959,6 +3176,7 @@ export function promoteMemoryEvents(
 ): { eventCount: number; notePath: string } {
   const events = readMemoryEvents(eventLog);
   const notesDir = concretePath(compiledNotes);
+  assertRuntimePath(notesDir);
   mkdirSync(notesDir, { recursive: true });
   const notePath = join(notesDir, "feedback.md");
   writeFileSync(notePath, compileMemoryNotes(events, limit));
@@ -3002,6 +3220,7 @@ function markdownFilesUnder(dir: string): string[] {
 }
 
 function writeManagedBlock(path: string, block: string): void {
+  assertRuntimePath(path);
   mkdirSync(dirname(path), { recursive: true });
   const previous = readExistingFile(path);
   const pattern = new RegExp(`${NETWORK_MEMORY_BEGIN}[\\s\\S]*?${NETWORK_MEMORY_END}`, "m");
@@ -3013,6 +3232,7 @@ function writeManagedBlock(path: string, block: string): void {
 }
 
 function writeHermesMemoryEntry(path: string, block: string): void {
+  assertRuntimePath(path);
   mkdirSync(dirname(path), { recursive: true });
   const previous = readExistingFile(path);
   const entries = previous
@@ -3067,7 +3287,7 @@ function providerMemorySinks(evi: Evi): string[] {
   if (evi.provider === "claude-code-channels") {
     if (!stateDir) return [];
     const sinks = [join(stateDir, "evictl-network-memory.md")];
-    const generatedPrompt = join(stateDir, `${slug(evi.profile)}-system.generated.md`);
+    const generatedPrompt = join(stateDir, "channels-system-prompt.md");
     if (existsSync(generatedPrompt)) sinks.push(generatedPrompt);
     return sinks;
   }
@@ -3110,6 +3330,7 @@ export function compileNetworkMemory(inventory: Inventory): string {
 export function syncNetworkMemory(inventory: Inventory): MemorySyncResult {
   const networkMemory = compileNetworkMemory(inventory);
   const memoryDir = concretePath(inventory.memoryCompiledNotes);
+  assertRuntimePath(memoryDir);
   mkdirSync(memoryDir, { recursive: true });
   const networkPath = join(memoryDir, "network.md");
   writeFileSync(networkPath, networkMemory);
@@ -3509,7 +3730,8 @@ function cmdEviStart(args: string[]): number {
   const eviId = required(args[0], "evi start requires an evi id");
   const path = optionValue(args, "--config") ?? configPath();
   const inventory = loadInventory(loadConfigData(path));
-  const { target } = resolveEviTarget(inventory, eviId);
+  const { evi, target } = resolveEviTarget(inventory, eviId);
+  prepareEviRuntime(evi);
   bootstrap(target);
   printStatuses([statusFor(target)]);
   return 0;
@@ -3529,7 +3751,8 @@ function cmdEviRestart(args: string[]): number {
   const eviId = required(args[0], "evi restart requires an evi id");
   const path = optionValue(args, "--config") ?? configPath();
   const inventory = loadInventory(loadConfigData(path));
-  const { target } = resolveEviTarget(inventory, eviId);
+  const { evi, target } = resolveEviTarget(inventory, eviId);
+  prepareEviRuntime(evi);
   stopTarget(target);
   bootstrap(target);
   printStatuses([statusFor(target)]);
@@ -3657,8 +3880,13 @@ export function runtimeInUse(inventory: Inventory, runtime: string): boolean {
   return false;
 }
 
-function startAndVerifyTarget(target: Target): TargetStatus {
-  bootstrap(target);
+function startAndVerifyTarget(target: Target, evi?: Evi): TargetStatus {
+  if (evi) {
+    prepareEviRuntime(evi);
+    bootstrap(target);
+  } else {
+    bootstrap(target);
+  }
   const status = statusFor(target);
   if (!status.running) throw new Error(`runtime did not start: ${target.name}`);
   return status;
@@ -3692,7 +3920,8 @@ function cmdIdentitySwitch(args: string[], label: "active" | "processor"): numbe
   const result = switchIdentityProcessorConfig(loadConfigData(path), identityId, processor);
   const inventory = loadInventory(result.data);
   const nextTarget = inventory.targets[result.nextRuntime];
-  const statuses = nextTarget ? [startAndVerifyTarget(nextTarget)] : [];
+  const nextEvi = inventory.evis[result.nextEviId];
+  const statuses = nextTarget && nextEvi ? [startAndVerifyTarget(nextTarget, nextEvi)] : [];
   statuses.push(
     ...Object.entries(inventory.targets)
       .filter(([runtime]) => runtime !== result.nextRuntime && !runtimeInUse(inventory, runtime))
@@ -3720,7 +3949,7 @@ function cmdSwitchCharacter(args: string[]): number {
   const nextInventory = loadInventory(result.data);
   const nextEvi = nextInventory.evis[result.nextEviId];
   const nextTarget = nextInventory.targets[result.nextRuntime];
-  const statuses = nextTarget ? [startAndVerifyTarget(nextTarget)] : [];
+  const statuses = nextTarget ? [startAndVerifyTarget(nextTarget, nextEvi)] : [];
   statuses.push(
     ...Object.entries(nextInventory.targets)
       .filter(
@@ -3843,8 +4072,11 @@ function telegramEnvPath(home = homedir()): string {
   return join(home, ".claude", "channels", "telegram", ".env");
 }
 
-function claudeChannelsStateDir(home = homedir()): string {
-  return join(home, ".local", "share", "claude-telegram-channel");
+function claudeChannelsStateDir(home?: string): string {
+  const root = home
+    ? join(home, ".local", "share", "evictl", "profiles")
+    : dataRoot();
+  return join(root, profileName(), "claude-code-channels");
 }
 
 function claudeChannelsLaunchAgentPath(home = homedir()): string {
@@ -3863,8 +4095,13 @@ function claudeChannelsSettingsPath(stateDir = claudeChannelsStateDir()): string
   return join(stateDir, "settings.json");
 }
 
-function claudeChannelsNukoeviSystemPromptPath(stateDir = claudeChannelsStateDir()): string {
-  return join(stateDir, "nukoevi-system.generated.md");
+export function claudeCodeChannelsPersonaSourcePath(profile = "nukoevi"): string {
+  return join(
+    profileRoot(),
+    "claude-code-channels",
+    validateProfileName(profile),
+    "channels-system-prompt.md",
+  );
 }
 
 function claudeCodeChannelsFromArgs(args: string[]): ClaudeCodeChannelPlugin[] {
@@ -3974,7 +4211,9 @@ function cmdChannelTelegramConfigureAuth(args: string[]): number {
   const envName = optionValue(args, "--key-env") ?? "ANTHROPIC_API_KEY";
   const apiKey = process.env[envName];
   if (!apiKey) throw new Error(`environment variable is empty: ${envName}`);
-  const stateDir = optionValue(args, "--state-dir") ?? claudeChannelsStateDir();
+  const stateDir =
+    expandPath(optionValue(args, "--state-dir")) ?? claudeChannelsStateDir();
+  assertRuntimePath(stateDir);
   const envPath = claudeApiEnvPath(stateDir);
   mkdirSync(dirname(envPath), { recursive: true });
   writeFileSync(envPath, claudeApiEnvContent(apiKey), { mode: 0o600 });
@@ -4013,8 +4252,13 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const configuredStateDir = expandPath(
     stringValue(configuredEvi.state_dir ?? configuredEvi.stateDir),
   );
-  const workspace = optionValue(args, "--workspace") ?? configuredWorkspace ?? homedir();
-  const stateDir = optionValue(args, "--state-dir") ?? configuredStateDir ?? claudeChannelsStateDir();
+  const personaSourceProfile = stringValue(configuredEvi.profile, identityId);
+  const workspace =
+    expandPath(optionValue(args, "--workspace")) ?? configuredWorkspace ?? homedir();
+  const stateDir =
+    expandPath(optionValue(args, "--state-dir")) ?? configuredStateDir ?? claudeChannelsStateDir();
+  assertRuntimePath(workspace);
+  assertRuntimePath(stateDir);
   const env = envFromArgs(args);
   const model = optionValue(args, "--model") ?? "";
   const envFile = optionValue(args, "--env-file") ?? claudeApiEnvPath(stateDir);
@@ -4023,7 +4267,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
   const startScript = join(stateDir, "start.sh");
   const systemPromptFile = claudeChannelsSystemPromptPath(stateDir);
   const settingsFile = claudeChannelsSettingsPath(stateDir);
-  const nukoeviSystemPromptFile = claudeChannelsNukoeviSystemPromptPath(stateDir);
+  const personaSourceFile = claudeCodeChannelsPersonaSourcePath(personaSourceProfile);
   const plistPath = optionValue(args, "--plist-path") ?? claudeChannelsLaunchAgentPath();
   const label = optionValue(args, "--label") ?? "com.local.claude-code-channels";
   const channels = claudeCodeChannelsFromArgs(args);
@@ -4035,8 +4279,8 @@ function cmdChannelTelegramSetup(args: string[]): number {
   ];
   const nukoeviRouting = hasFlag(args, "--nukoevi-routing");
   const baseSystemPrompt =
-    nukoeviRouting && existsSync(nukoeviSystemPromptFile)
-      ? readFileSync(nukoeviSystemPromptFile, "utf8")
+    nukoeviRouting && existsSync(personaSourceFile)
+      ? readFileSync(personaSourceFile, "utf8")
       : nukoeviRouting
         ? claudeCodeChannelsNukoeviFallbackSystemPrompt()
         : "";
@@ -4096,7 +4340,7 @@ function cmdChannelTelegramSetup(args: string[]): number {
             startScript,
             settingsFile,
             systemPromptFile,
-            nukoeviSystemPromptFile: nukoeviRouting ? nukoeviSystemPromptFile : undefined,
+            personaSourceFile: nukoeviRouting ? personaSourceFile : undefined,
             plistPath,
             configPath: path,
             startScriptContent,
@@ -4162,7 +4406,9 @@ function cmdChannelTelegramModel(args: string[]): number {
   const eviId = `evi-claude-code-channels-${slug(identityId)}`;
   const evi = inventory.evis[eviId];
   if (!evi) throw new Error(`unknown Claude Code Channels evi: ${eviId}`);
-  const startScript = join(evi.stateDir, "start.sh");
+  const stateDir = concretePath(evi.stateDir);
+  assertRuntimePath(stateDir);
+  const startScript = join(stateDir, "start.sh");
   if (!existsSync(startScript)) throw new Error(`start script not found: ${startScript}`);
   const nextScript = claudeCodeChannelsStartScriptWithModel(
     readFileSync(startScript, "utf8"),
@@ -4538,17 +4784,28 @@ function cmdTargetAdd(args: string[]): number {
 
 function cmdOpenClawSetup(args: string[]): number {
   const path = optionValue(args, "--config") ?? configPath();
+  const data = loadConfigData(path);
+  const inventory = loadInventory(data);
+  const configuredEvi =
+    inventory.evis["evi-openclaw-default"] ??
+    Object.values(inventory.evis)
+      .filter((evi) => evi.provider === "openclaw")
+      .sort((a, b) => a.eviId.localeCompare(b.eviId))[0];
   const plan = openClawSetupPlan({
-    prefix: optionValue(args, "--prefix"),
+    prefix: optionValue(args, "--prefix") ?? configuredEvi?.stateDir,
     binDir: optionValue(args, "--bin-dir"),
     openclawBin: optionValue(args, "--openclaw-bin"),
-    workspace: optionValue(args, "--workspace"),
-    model: optionValue(args, "--model") ?? DEFAULT_OPENCLAW_MODEL,
+    workspace: optionValue(args, "--workspace") ?? configuredEvi?.workspace,
+    model: optionValue(args, "--model") ?? configuredEvi?.model ?? DEFAULT_OPENCLAW_MODEL,
     authProvider: optionValue(args, "--auth-provider") ?? "codex",
     authProfileId: optionValue(args, "--auth-profile") ?? DEFAULT_OPENCLAW_CODEX_AUTH_PROFILE,
-    agentId: optionValue(args, "--agent") ?? optionValue(args, "--agent-id") ?? "main",
-    eviId: optionValue(args, "--id") ?? "evi-openclaw",
-    profile: optionValue(args, "--profile") ?? "default",
+    agentId:
+      optionValue(args, "--agent") ??
+      optionValue(args, "--agent-id") ??
+      configuredEvi?.agentId ??
+      "main",
+    eviId: optionValue(args, "--id") ?? configuredEvi?.eviId ?? "evi-openclaw",
+    profile: optionValue(args, "--profile") ?? configuredEvi?.profile ?? "default",
     installCli: !hasFlag(args, "--no-install-cli"),
     syncCodexAuth: hasFlag(args, "--no-sync-codex-auth")
       ? false

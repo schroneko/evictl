@@ -49,8 +49,8 @@
       "profile": "nukoevi",
       "agent_id": "nukoevi-telegram",
       "session_id": "claude-code-channels-nukoevi",
-      "workspace": "${EVICTL_PROFILE_DIR}/claude-code-channels/nukoevi",
-      "state_dir": "${EVICTL_PROFILE_DIR}/claude-code-channels/nukoevi",
+      "workspace": "${EVICTL_DATA_DIR}/claude-code-channels/nukoevi/workspace",
+      "state_dir": "${EVICTL_DATA_DIR}/claude-code-channels/nukoevi",
       "network_id": "default",
       "replica_of": "",
       "role": "replica",
@@ -65,8 +65,8 @@
       "profile": "nukoevi",
       "agent_id": "nukoevi",
       "session_id": "",
-      "workspace": "${EVICTL_PROFILE_DIR}/hermes/nukoevi",
-      "state_dir": "${EVICTL_PROFILE_DIR}/hermes/nukoevi",
+      "workspace": "${EVICTL_DATA_DIR}/hermes/nukoevi/workspace",
+      "state_dir": "${EVICTL_DATA_DIR}/hermes/nukoevi",
       "network_id": "default",
       "replica_of": "",
       "role": "replica",
@@ -81,8 +81,8 @@
       "profile": "default",
       "agent_id": "main",
       "session_id": "",
-      "workspace": "${EVICTL_PROFILE_DIR}/openclaw/default/workspace",
-      "state_dir": "${EVICTL_PROFILE_DIR}/openclaw/default",
+      "workspace": "${EVICTL_DATA_DIR}/openclaw/default/workspace",
+      "state_dir": "${EVICTL_DATA_DIR}/openclaw/default",
       "network_id": "default",
       "replica_of": "",
       "role": "replica",
@@ -109,8 +109,8 @@
     }
   },
   "memory": {
-    "event_log": "${EVICTL_PROFILE_DIR}/memory/events.jsonl",
-    "compiled_notes": "${EVICTL_PROFILE_DIR}/memory"
+    "event_log": "${EVICTL_DATA_DIR}/memory/events.jsonl",
+    "compiled_notes": "${EVICTL_DATA_DIR}/memory"
   },
   "identities": {
     "default": {

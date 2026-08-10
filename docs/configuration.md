@@ -1,18 +1,31 @@
 # Configuration
 
 `evictl` keeps its own inventory of AI agents, engine deployments, routes, and
-memory sync state. The canonical default profile is shipped with the repository:
+memory sync state. The canonical default profile source is shipped with the repository:
 
 ```bash
 profiles/default/config.json
 ```
 
-Named profiles live under `profiles/<name>/`. Set `EVICTL_PROFILE` to select one
-of them, or set `EVICTL_PROFILE_ROOT` to use a different profile checkout. An
-explicit `XDG_CONFIG_HOME` or `--config` path takes precedence over the profile
-defaults. Profile data may include persona, memory, routing, and workspace
-definitions, but must not include provider credentials, tokens, sessions, logs,
-databases, or caches.
+Persona and other portable source files live below `profiles/default/` or the
+selected `profiles/<name>/` source directory. Set `EVICTL_PROFILE` to select a
+named profile, or set `EVICTL_PROFILE_ROOT` to use a different source checkout.
+An explicit `XDG_CONFIG_HOME` or `--config` path takes precedence over the
+profile config file.
+
+Writable profile data defaults to `~/.local/share/evictl/profiles/<profile>`. Set
+`EVICTL_DATA_ROOT` to replace the parent directory. `${EVICTL_PROFILE_DIR}` is
+the source-directory token and `${EVICTL_DATA_DIR}` is the selected writable
+profile-data token. The default event log is
+`<data-dir>/memory/events.jsonl`, and promoted notes are under
+`<data-dir>/memory/`.
+
+Source profiles contain portable persona and configuration defaults only. They
+must not contain credentials, tokens, provider sessions, logs, caches,
+databases, or personal memory. Runtime state and generated files stay under the
+writable data directory and are not symlinked into the source checkout or
+installed package. `nukoevi` is an identity/persona inside the default profile,
+not a separate named profile.
 
 ## Discovery And Adoption
 
@@ -72,17 +85,17 @@ evictl target add hermes-agent-grok --provider hermes-agent --label ai.hermes.ga
 Create another engine deployment:
 
 ```bash
-evictl evi add --provider claude-code-channels --id evi-claude-code-channels-research --profile research --workspace /tmp/research --state-dir /tmp/research-state
-evictl evi add --provider hermes-agent --id evi-hermes-agent-research --profile research --state-dir ~/.hermes/profiles/research
-evictl evi add --provider openclaw --id evi-openclaw-research --profile research --workspace ~/.openclaw/agents/research/agent
+evictl evi add --provider claude-code-channels --id evi-claude-code-channels-research --profile research --workspace '${EVICTL_DATA_DIR}/claude-code-channels/research/workspace' --state-dir '${EVICTL_DATA_DIR}/claude-code-channels/research'
+evictl evi add --provider hermes-agent --id evi-hermes-agent-research --profile research --state-dir '${EVICTL_DATA_DIR}/hermes/research'
+evictl evi add --provider openclaw --id evi-openclaw-research --profile research --workspace '${EVICTL_DATA_DIR}/openclaw/research/workspace' --state-dir '${EVICTL_DATA_DIR}/openclaw/research'
 ```
 
 Create Hermes Agent replicas with explicit inference providers:
 
 ```bash
-evictl evi add --provider hermes-agent --runtime hermes-agent-grok --id evi-hermes-agent-grok --profile grok --state-dir ~/.hermes/profiles/grok --model-provider grok --model grok-4.3
-evictl evi add --provider hermes-agent --id evi-hermes-agent-codex --profile codex --state-dir ~/.hermes/profiles/codex --model-provider codex
-evictl evi add --provider hermes-agent --id evi-hermes-agent-llama --profile llama --state-dir ~/.hermes/profiles/llama --model-provider llama.cpp --model local-model --base-url http://127.0.0.1:8080/v1
+evictl evi add --provider hermes-agent --runtime hermes-agent-grok --id evi-hermes-agent-grok --profile grok --state-dir '${EVICTL_DATA_DIR}/hermes/grok' --model-provider grok --model grok-4.3
+evictl evi add --provider hermes-agent --id evi-hermes-agent-codex --profile codex --state-dir '${EVICTL_DATA_DIR}/hermes/codex' --model-provider codex
+evictl evi add --provider hermes-agent --id evi-hermes-agent-llama --profile llama --state-dir '${EVICTL_DATA_DIR}/hermes/llama' --model-provider llama.cpp --model local-model --base-url http://127.0.0.1:8080/v1
 ```
 
 For Hermes Agent, `--model-provider` records the process-level inference
@@ -131,8 +144,8 @@ evictl shared memory as a managed section written only by `memory sync`.
       "profile": "demo",
       "agent_id": "",
       "session_id": "",
-      "workspace": "~/Documents/claude-code-channels",
-      "state_dir": "~/.local/share/claude-code-channels",
+      "workspace": "${EVICTL_DATA_DIR}/claude-code-channels/demo/workspace",
+      "state_dir": "${EVICTL_DATA_DIR}/claude-code-channels/demo",
       "model_provider": "",
       "model": "",
       "base_url": "",
@@ -178,21 +191,21 @@ evictl shared memory as a managed section written only by `memory sync`.
     }
   },
   "memory": {
-    "event_log": "~/.local/share/evictl/events.jsonl",
-    "compiled_notes": "~/.local/share/evictl/memory",
+    "event_log": "${EVICTL_DATA_DIR}/memory/events.jsonl",
+    "compiled_notes": "${EVICTL_DATA_DIR}/memory",
     "provider_policies": {
       "evi-claude-code-channels-demo": {
         "native_state": "preserve",
         "sync_strategy": "managed-section",
         "description": "Claude Code CLAUDE.md and appended prompt memory stay native",
         "sources": [
-          "~/Documents/claude-code-channels/CLAUDE.md",
-          "~/Documents/claude-code-channels/.claude/CLAUDE.md",
-          "~/Documents/claude-code-channels/CLAUDE.local.md",
-          "~/.local/share/claude-code-channels/evictl-network-memory.md"
+          "${EVICTL_DATA_DIR}/claude-code-channels/demo/workspace/CLAUDE.md",
+          "${EVICTL_DATA_DIR}/claude-code-channels/demo/workspace/.claude/CLAUDE.md",
+          "${EVICTL_DATA_DIR}/claude-code-channels/demo/workspace/CLAUDE.local.md",
+          "${EVICTL_DATA_DIR}/claude-code-channels/demo/evictl-network-memory.md"
         ],
         "sinks": [
-          "~/.local/share/claude-code-channels/evictl-network-memory.md"
+          "${EVICTL_DATA_DIR}/claude-code-channels/demo/evictl-network-memory.md"
         ]
       }
     }

@@ -30,8 +30,10 @@ evictl openclaw setup
 `openclaw setup` installs or exposes the OpenClaw CLI, creates the baseline
 workspace, sets the default model, syncs OpenClaw's OpenAI auth order to the
 Codex CLI profile, starts the Gateway launch agent, and adopts the result as
-the `evi-openclaw` engine candidate. It does not create Telegram or StackChan
-routes. See the README for the option list.
+the configured OpenClaw evi. With the canonical default config this is
+`evi-openclaw-default`, using its configured local prefix and workspace. It
+does not create Telegram or StackChan routes. See the README for the option
+list.
 
 When run from a terminal, `evictl migration` asks for confirmation before
 writing config. If two runtimes already own the same channel surface, it asks
@@ -58,8 +60,12 @@ evictl tail evi-claude-code-channels-demo --lines 120
 ```
 
 `evi start`, `evi stop`, and `evi restart` operate the configured provider
-target for an evi. Use `evictl channel telegram restart <agent>` for a
-Claude Code Channels Telegram session restart by AI agent name.
+target for an evi. Before `evi start` or `evi restart`, evictl creates the
+configured writable state and workspace directories and seeds only portable
+persona files from the selected profile source. Existing files are preserved;
+memory files, `USER.md`, credentials, sessions, logs, and caches are not copied.
+Use `evictl channel telegram restart <agent>` for a Claude Code Channels
+Telegram session restart by AI agent name.
 
 `restart` also accepts an AI agent name. It resolves the agent's active evi and
 restarts it, using the Claude Code Channels Telegram restart path when the
@@ -93,6 +99,13 @@ evictl processor launch-plan demo --json
 
 ## Memory
 
+The canonical source files are under `profiles/default/` and are read-only
+defaults. Runtime data is stored under
+`~/.local/share/evictl/profiles/<profile>` unless `EVICTL_DATA_ROOT` overrides
+the parent. The `${EVICTL_DATA_DIR}` token resolves to the selected profile's
+writable directory. Profile source and profile data must not contain
+credentials or personal memory.
+
 Record feedback into the shared memory event log:
 
 ```bash
@@ -113,20 +126,20 @@ evictl sync
 ```
 
 `memory promote` compiles feedback events from the JSONL event log into
-`compiled_notes/feedback.md`.
+`<data-dir>/memory/feedback.md`.
 
 `memory search` searches the JSONL event log and compiled memory notes. Use
 `--json` for machine-readable results.
 
 `memory export` prints the compiled network memory to stdout.
 
-`memory sync` builds `compiled_notes/network.md` from provider memory sources and
-writes a managed `evictl:network-memory` section back into provider-visible
-sinks:
+`memory sync` builds `<data-dir>/memory/network.md` from provider memory sources
+and writes a managed `evictl:network-memory` section back into provider-visible
+runtime sinks:
 
 - Hermes Agent: `<state_dir>/memories/MEMORY.md` and `<state_dir>/memories/USER.md` are sources; `<state_dir>/memories/MEMORY.md` is the managed sink.
 - OpenClaw: `<workspace>/MEMORY.md`, `<workspace>/USER.md`, `<workspace>/IDENTITY.md`, `<workspace>/SOUL.md`, `<workspace>/DREAMS.md`, `<workspace>/dreams.md`, and Markdown files under `<workspace>/memory/` are sources; `<workspace>/MEMORY.md` is the managed sink.
-- Claude Code Channels: Claude Code reads `CLAUDE.md` files and the configured appended prompt. `evictl` writes `<state_dir>/evictl-network-memory.md` and also updates an existing generated prompt file when present.
+- Claude Code Channels: Claude Code reads `CLAUDE.md` files and the configured appended prompt. `evictl` writes `<state_dir>/evictl-network-memory.md` and updates the generated `<state_dir>/channels-system-prompt.md` when it exists; the checked-in persona source is never used as a writable sink.
 
 `sync` runs both event promotion and network memory sync.
 

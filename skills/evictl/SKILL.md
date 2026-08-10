@@ -33,7 +33,7 @@ that checkout before runtime inspection:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/evictl
+ln -sfn "$(pwd)/bin/evictl" ~/.local/bin/evictl
 evictl --help
 ```
 

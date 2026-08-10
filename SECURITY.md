@@ -23,8 +23,20 @@ Include:
 
 `evictl` is a local orchestration CLI. It reads local launchd plists, process
 lists, tmux session names, and evi configuration. It does not intentionally
-collect secrets. Do not store API keys, Telegram tokens, or private prompts in
-`~/.config/evictl/config.json`.
+collect secrets. The checked-in profile source under `profiles/` is portable
+and must not contain credentials, tokens, private prompts, provider sessions,
+logs, or personal memory.
+
+Runtime state, memory events, generated prompts, settings, environment files,
+and logs belong under the writable per-profile data directory
+`~/.local/share/evictl/profiles/<profile>`. Set `EVICTL_DATA_ROOT` to change its
+parent. `${EVICTL_PROFILE_DIR}` identifies source files, while
+`${EVICTL_DATA_DIR}` identifies writable data. Runtime preparation copies only
+portable persona files and preserves existing user files; it never symlinks
+runtime state into the source checkout or installed package.
+
+Do not store API keys, Telegram tokens, or private prompts in the profile source
+or in checked-in configuration.
 
 Commands that can affect running agents are explicit:
 

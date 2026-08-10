@@ -28,7 +28,7 @@ bun install -g evictl
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/evictl
+ln -sfn "$(pwd)/bin/evictl" ~/.local/bin/evictl
 evictl --help
 ```
 
@@ -60,18 +60,27 @@ credential、session、log、memory store を変換、削除、移動しませ�
 
 プロファイルの正本はこの repository の `profiles/` です。プロファイルを
 指定しない場合は `profiles/default/` の `config.json` を読み込みます。
-名前付きプロファイルは `profiles/<name>/` に置き、`EVICTL_PROFILE` で選択します。
-
-```bash
-EVICTL_PROFILE=nukoevi evictl status
-```
+`profiles/default/` 以下が portable な persona と設定の source で、名前付き
+プロファイルの source は `profiles/<name>/` に置き、`EVICTL_PROFILE` で選択します。
 
 プロファイルの保存場所を別の checkout へ切り替える場合は
 `EVICTL_PROFILE_ROOT` を使います。`XDG_CONFIG_HOME` と `--config` は明示的な
 設定ファイル指定として、既定プロファイルより優先されます。
 
-プロファイルには persona、memory、routing、workspace の定義を保存できます。
-provider credential、token、session、log、database、cache は保存しません。
+書き込み可能な profile data は既定で
+`~/.local/share/evictl/profiles/<profile>` に保存します。親ディレクトリを
+変更する場合は `EVICTL_DATA_ROOT` を指定します。`${EVICTL_DATA_DIR}` は
+選択中の profile data directory、`${EVICTL_PROFILE_DIR}` は読み取り専用の
+profile source directory に展開されます。memory event は
+`<data-dir>/memory/events.jsonl`、promoted note は `<data-dir>/memory/` に保存します。
+
+profile source には portable な persona と設定だけを置き、credential、token、
+provider session、log、cache、個人 memory を保存しません。runtime state と
+生成ファイルは checkout やインストール済み package へ戻る symlink を作らず、
+profile data の下だけに保存します。
+
+`nukoevi` は default profile 内の Nukoevi identity/persona であり、別名の
+`EVICTL_PROFILE` named profile ではありません。
 
 ## 日常利用
 
@@ -107,7 +116,8 @@ evictl openclaw setup
 この command は OpenClaw CLI を install または `~/.local/bin/openclaw` に expose し、
 baseline workspace を作成し、default model を `openai/gpt-5.5` に設定し、
 OpenClaw の OpenAI auth order を Codex CLI profile `openai:default` に同期し、
-Gateway launch agent を起動し、OpenClaw を `evi-openclaw` engine candidate として採用します。
+Gateway launch agent を起動し、設定済みの `evi-openclaw-default` engine candidate を
+local prefix と workspace 付きで採用します。
 Telegram や StackChan route は作成しないため、AI エージェントを OpenClaw へ switch するまで、
 既存の Claude Code Channels route が ownership を保ちます。
 
@@ -157,11 +167,13 @@ evictl channel telegram setup nukoevi \
   --channel telegram \
   --channel stackchan \
   --plugin-dir ~/ghq/github.com/schroneko/stackchan-nukoevi/channels/stackchan \
-  --nukoevi-routing \
-  --state-dir ~/.local/share/claude-telegram-channel \
-  --label com.local.claude-telegram-channel \
-  --plist-path ~/Library/LaunchAgents/com.local.claude-telegram-channel.plist
+  --nukoevi-routing
 ```
+
+default config では、生成した prompt、settings、env、log は
+`~/.local/share/evictl/profiles/default/claude-code-channels/nukoevi` 以下に保存し、
+portable persona source は
+`profiles/default/claude-code-channels/nukoevi/channels-system-prompt.md` から読み込みます。
 
 生成される `start.sh` は launchd watchdog です。
 tmux session がすでに存在する場合、通常はそのままにします。

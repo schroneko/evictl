@@ -31,7 +31,7 @@ directly:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sfn /Users/username/ghq/github.com/schroneko/evictl/bin/evictl ~/.local/bin/evictl
+ln -sfn "$(pwd)/bin/evictl" ~/.local/bin/evictl
 evictl --help
 ```
 
@@ -62,14 +62,27 @@ move provider-native files, credentials, sessions, logs, or memory stores.
 ## Profiles
 
 Profiles are canonical repository data under `profiles/`. The default profile is
-`profiles/default/config.json`. Named profiles use `profiles/<name>/` and can be
-selected with `EVICTL_PROFILE`. Set `EVICTL_PROFILE_ROOT` to use another profile
+`profiles/default/config.json`, and its portable source files live below
+`profiles/default/`. Named profile sources use `profiles/<name>/` and can be
+selected with `EVICTL_PROFILE`. Set `EVICTL_PROFILE_ROOT` to use another source
 checkout. An explicit `XDG_CONFIG_HOME` or `--config` path takes precedence over
-the profile defaults.
+the profile config file.
 
-Profile data may include persona, memory, routing, and workspace definitions.
-Provider credentials, tokens, sessions, logs, databases, and caches must not be
-stored in a profile.
+The writable data directory for each profile is
+`~/.local/share/evictl/profiles/<profile>`. Set `EVICTL_DATA_ROOT` to replace
+`~/.local/share/evictl/profiles`; `${EVICTL_DATA_DIR}` expands to the selected
+profile's directory and `${EVICTL_PROFILE_DIR}` expands to its read-only source
+directory. Memory events are stored in
+`<data-dir>/memory/events.jsonl`, and promoted notes are stored in
+`<data-dir>/memory/`.
+
+Profile source files are portable persona and configuration defaults. They must
+never contain credentials, tokens, provider sessions, logs, caches, or personal
+memory. Runtime state and generated files stay under the writable data directory
+and are never symlinked back into the checkout or installed package.
+
+`nukoevi` is the Nukoevi identity/persona inside the default profile. It is not a
+separate `EVICTL_PROFILE` named profile.
 
 ## Daily Use
 
@@ -106,8 +119,9 @@ evictl openclaw setup
 The command installs or exposes the OpenClaw CLI at `~/.local/bin/openclaw`,
 creates the baseline OpenClaw workspace, sets the default model to
 `openai/gpt-5.5`, syncs OpenClaw's OpenAI auth order to the Codex CLI profile
-`openai:default`, starts the Gateway launch agent, and adopts OpenClaw as the
-`evi-openclaw` engine candidate. It does not create Telegram or StackChan
+`openai:default`, starts the Gateway launch agent, and adopts the configured
+`evi-openclaw-default` engine candidate using its local prefix and workspace. It
+does not create Telegram or StackChan
 routes, so existing Claude Code Channels routes keep ownership until you switch
 an AI agent to OpenClaw.
 
@@ -157,11 +171,14 @@ evictl channel telegram setup nukoevi \
   --channel telegram \
   --channel stackchan \
   --plugin-dir ~/ghq/github.com/schroneko/stackchan-nukoevi/channels/stackchan \
-  --nukoevi-routing \
-  --state-dir ~/.local/share/claude-telegram-channel \
-  --label com.local.claude-telegram-channel \
-  --plist-path ~/Library/LaunchAgents/com.local.claude-telegram-channel.plist
+  --nukoevi-routing
 ```
+
+For the default config, generated prompts, settings, environment files, and
+logs are written below
+`~/.local/share/evictl/profiles/default/claude-code-channels/nukoevi`. The
+portable persona source is read from
+`profiles/default/claude-code-channels/nukoevi/channels-system-prompt.md`.
 
 The generated `start.sh` is a launchd watchdog. When the tmux session already
 exists, it normally leaves it alone, but it restarts Claude Code Channels after

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -43,6 +50,7 @@ import {
   openClawSetupPlan,
   parseGlobalOptions,
   parseProcessPids,
+  prepareEviRuntime,
   profileConfigPath,
   profileName,
   profileRoot,
@@ -76,6 +84,7 @@ import {
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 const originalEvictlProfile = process.env.EVICTL_PROFILE;
 const originalEvictlProfileRoot = process.env.EVICTL_PROFILE_ROOT;
+const originalEvictlDataRoot = process.env.EVICTL_DATA_ROOT;
 
 afterEach(() => {
   if (originalXdgConfigHome === undefined) {
@@ -92,6 +101,11 @@ afterEach(() => {
     delete process.env.EVICTL_PROFILE_ROOT;
   } else {
     process.env.EVICTL_PROFILE_ROOT = originalEvictlProfileRoot;
+  }
+  if (originalEvictlDataRoot === undefined) {
+    delete process.env.EVICTL_DATA_ROOT;
+  } else {
+    process.env.EVICTL_DATA_ROOT = originalEvictlDataRoot;
   }
 });
 
@@ -510,6 +524,53 @@ describe("inventory", () => {
         healthPatterns: [],
       }),
     ).toThrow("target already exists");
+  });
+
+  test("seeds portable persona into profile data without copying private paths", () => {
+    const root = mkdtempSync(join(tmpdir(), "evictl-runtime-profile-test-"));
+    try {
+      const profileRootPath = join(root, "profiles");
+      const dataRootPath = join(root, "data");
+      const sourceDir = join(profileRootPath, "default", "hermes", "nukoevi");
+      mkdirSync(join(sourceDir, "skills", "portable"), { recursive: true });
+      mkdirSync(join(sourceDir, "skills", "memory"), { recursive: true });
+      writeFileSync(join(sourceDir, "SOUL.md"), "portable persona\n");
+      writeFileSync(join(sourceDir, "skills", "portable", "guide.md"), "portable guide\n");
+      writeFileSync(join(sourceDir, "skills", "memory", "MEMORY.md"), "private note\n");
+
+      process.env.EVICTL_PROFILE = "default";
+      process.env.EVICTL_PROFILE_ROOT = profileRootPath;
+      process.env.EVICTL_DATA_ROOT = dataRootPath;
+      const stateDir = "${EVICTL_DATA_DIR}/hermes/nukoevi";
+      const result = prepareEviRuntime({
+        eviId: "evi-hermes-agent-nukoevi",
+        runtime: "hermes-agent",
+        provider: "hermes-agent",
+        profile: "nukoevi",
+        agentId: "nukoevi",
+        sessionId: "",
+        workspace: `${stateDir}/workspace`,
+        stateDir,
+        networkId: "default",
+        replicaOf: "",
+        role: "replica",
+        modelProvider: "",
+        model: "",
+        baseUrl: "",
+        env: {},
+      });
+
+      expect(result.sourceDir).toBe(sourceDir);
+      expect(result.stateDir).toBe(join(dataRootPath, "default", "hermes", "nukoevi"));
+      expect(result.workspace).toBe(join(result.stateDir, "workspace"));
+      expect(readFileSync(join(result.stateDir, "SOUL.md"), "utf8")).toBe("portable persona\n");
+      expect(readFileSync(join(result.stateDir, "skills", "portable", "guide.md"), "utf8")).toBe(
+        "portable guide\n",
+      );
+      expect(existsSync(join(result.stateDir, "skills", "memory", "MEMORY.md"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1488,6 +1549,7 @@ describe("memory events", () => {
         join(claudeCodeChannelsState, "evictl-network-memory.md"),
         "Claude channel fact\n",
       );
+      writeFileSync(join(claudeCodeChannelsState, "channels-system-prompt.md"), "persona\n");
 
       const inventory = loadInventory({
         memory: {
@@ -1521,7 +1583,7 @@ describe("memory events", () => {
       expect(compiled).toContain("OpenClaw daily note");
       const result = syncNetworkMemory(inventory);
       expect(result.sources).toBe(5);
-      expect(result.sinks).toBe(3);
+      expect(result.sinks).toBe(4);
       expect(readFileSync(join(root, "compiled", "network.md"), "utf8")).toContain(
         "evictl Replicated Evi Memory",
       );
@@ -1533,6 +1595,9 @@ describe("memory events", () => {
       );
       expect(
         readFileSync(join(claudeCodeChannelsState, "evictl-network-memory.md"), "utf8"),
+      ).toContain("evictl:network-memory begin");
+      expect(
+        readFileSync(join(claudeCodeChannelsState, "channels-system-prompt.md"), "utf8"),
       ).toContain("evictl:network-memory begin");
     } finally {
       rmSync(root, { recursive: true, force: true });
